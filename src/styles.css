@@ -13,3 +13,31 @@ input { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; b
 input:focus { outline: none; border-color: var(--acc); }
 button { padding: 11px; border: none; border-radius: 9px; background: var(--acc); color: var(--acc-ink); font-size: 14px; font-weight: 600; cursor: pointer; }
 .hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; line-height: 1.5; }
+.err { color: #c0392b; min-height: 16px; }
+.panel { max-width: 1000px; margin: 0 auto; padding: 24px 20px; }
+.topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.crumb { color: var(--muted); font-size: 13px; }
+.topbar h2 { margin: 2px 0 0; font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+.actions { display: flex; gap: 8px; }
+button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.newuser { display: flex; gap: 8px; margin-bottom: 14px; }
+.newuser input { flex: 1; }
+.tablewrap { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: auto; }
+table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
+.matrix th, .matrix td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+.matrix thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.matrix th.u, .matrix td.u { text-align: left; }
+.matrix tbody tr:last-child td { border-bottom: none; }
+.ucell { display: flex; align-items: center; gap: 10px; }
+.av { width: 28px; height: 28px; border-radius: 50%; background: var(--line); color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.uinfo { display: flex; flex-direction: column; line-height: 1.25; }
+.uinfo b { font-weight: 600; }
+.email { color: var(--muted); font-size: 11px; }
+.tfa .ok { color: #1f9d55; } .tfa .no { color: var(--muted); }
+select.role { padding: 5px 6px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink); font-size: 12px; max-width: 124px; }
+select.role[data-has] { border-color: var(--acc); }
+.acc { text-align: right; white-space: nowrap; }
+button.mini { padding: 4px 8px; font-size: 11px; font-weight: 500; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; margin-left: 4px; cursor: pointer; }
+tr.off { opacity: .55; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 16px; border-radius: 9px; font-size: 13px; z-index: 50; max-width: 90vw; }
+.toast.bad { background: #c0392b; }

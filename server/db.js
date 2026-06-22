@@ -116,6 +116,22 @@ export const revokeRole = async (userId, appSlug) => void (await q("DELETE FROM 
 export const rolesDe = async (userId) =>
   Object.fromEntries((await q("SELECT app_slug,role FROM role_assignments WHERE user_id=$1", [userId])).rows.map((r) => [r.app_slug, r.role]));
 
+export const getUserById = async (id) => (await q("SELECT id,email,name,status,org_id FROM users WHERE id=$1", [id])).rows[0] || null;
+export const removeTotpFactor = async (userId) => void (await q("DELETE FROM auth_factors WHERE user_id=$1 AND kind='totp'", [userId]));
+export async function createUserWithPassword({ email, name = "", org = 1 }, pass) {
+  const id = await createUser({ email, name, org });
+  await setPasswordFactor(id, pass);
+  return id;
+}
+
+// La matriz de accesos: cada usuario con su mapa {app_slug: rol} y si tiene 2FA confirmado.
+export const listMatrix = async (org = 1) => (await q(`
+  SELECT u.id, u.email, u.name, u.status,
+    EXISTS(SELECT 1 FROM auth_factors f WHERE f.user_id=u.id AND f.kind='totp' AND f.confirmed_at IS NOT NULL) AS totp,
+    COALESCE(jsonb_object_agg(ra.app_slug, ra.role) FILTER (WHERE ra.app_slug IS NOT NULL), '{}'::jsonb) AS roles
+  FROM users u LEFT JOIN role_assignments ra ON ra.user_id=u.id
+  WHERE u.org_id=$1 GROUP BY u.id ORDER BY lower(u.email)`, [org])).rows;
+
 // ---- auditoría de seguridad (siempre on) ----
 export const auditSec = async (actor, event, target = "", org = 1, ip = "") =>
   void (await q("INSERT INTO audit_security(org_id,actor,event,target,ip) VALUES($1,$2,$3,$4,$5)", [org, actor, event, target, ip]));
