@@ -1,0 +1,145 @@
+// db.js — capa de datos sobre PostgreSQL (`pg`). Esquema, repositorio y seed. Todo acceso pasa por
+// acá. Diseñado multi-tenant desde el día uno (org_id) y con factores de auth extensibles
+// (password/totp/recovery/… passkey en v2 = otra fila). Funciones ASÍNCRONAS.
+import pg from "pg";
+import { randomBytes } from "node:crypto";
+import { config } from "./config.js";
+import { hashPassword } from "./crypto.js";
+
+const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
+const q = (text, params) => pool.query(text, params);
+
+export async function initDb() {
+  for (let i = 1; ; i++) {
+    try { await q("SELECT 1"); break; }
+    catch (e) { if (i >= 15) throw e; await new Promise((r) => setTimeout(r, 1000)); }
+  }
+  await q(`
+    CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE IF NOT EXISTS orgs (
+      id SERIAL PRIMARY KEY, slug TEXT UNIQUE NOT NULL, name TEXT,
+      activity_audit BOOLEAN DEFAULT false, audit_retention_days INTEGER DEFAULT 90,
+      creado TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY, org_id INTEGER NOT NULL DEFAULT 1 REFERENCES orgs(id),
+      email TEXT NOT NULL, name TEXT, status TEXT NOT NULL DEFAULT 'active',
+      creado TIMESTAMPTZ DEFAULT now(), UNIQUE(org_id, email));
+    CREATE TABLE IF NOT EXISTS auth_factors (
+      id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL, secret TEXT, data JSONB DEFAULT '{}',
+      confirmed_at TIMESTAMPTZ, creado TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS apps (
+      slug TEXT PRIMARY KEY, name TEXT, redirect_uris TEXT[] DEFAULT '{}',
+      roles TEXT[] DEFAULT '{}', creado TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS role_assignments (
+      id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      app_slug TEXT NOT NULL REFERENCES apps(slug) ON DELETE CASCADE,
+      role TEXT NOT NULL, granted_by TEXT, granted TIMESTAMPTZ DEFAULT now(),
+      UNIQUE(user_id, app_slug));
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      app_slug TEXT, name TEXT, key_hash TEXT NOT NULL,
+      creado TIMESTAMPTZ DEFAULT now(), last_used TIMESTAMPTZ);
+    CREATE TABLE IF NOT EXISTS auth_codes (
+      code_hash TEXT PRIMARY KEY, user_id INTEGER, app_slug TEXT, redirect_uri TEXT,
+      code_challenge TEXT, scope TEXT, nonce TEXT, expires TIMESTAMPTZ);
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      token_hash TEXT PRIMARY KEY, user_id INTEGER, app_slug TEXT,
+      expires TIMESTAMPTZ, revoked BOOLEAN DEFAULT false, creado TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS audit_security (
+      id SERIAL PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), org_id INTEGER,
+      actor TEXT, event TEXT, target TEXT, ip TEXT);
+    CREATE TABLE IF NOT EXISTS audit_activity (
+      id SERIAL PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), org_id INTEGER,
+      user_email TEXT, app_slug TEXT, action TEXT, detail JSONB DEFAULT '{}');
+    CREATE INDEX IF NOT EXISTS idx_factors_user ON auth_factors(user_id);
+    CREATE INDEX IF NOT EXISTS idx_assign_user ON role_assignments(user_id);
+    CREATE INDEX IF NOT EXISTS idx_assign_app ON role_assignments(app_slug);
+    CREATE INDEX IF NOT EXISTS idx_audit_sec_ts ON audit_security(ts);
+  `);
+}
+
+// ---- config k/v (cache corta; usado también para persistir la clave de firma) ----
+let _cfg = null, _ts = 0;
+async function loadCfg() {
+  if (_cfg && Date.now() - _ts < 30000) return _cfg;
+  _cfg = Object.fromEntries((await q("SELECT key,value FROM config")).rows.map((r) => [r.key, r.value]));
+  _ts = Date.now();
+  return _cfg;
+}
+export const getConfig = async (k, def = null) => { const c = await loadCfg(); return c[k] ?? def; };
+export const setConfig = async (k, v) => {
+  await q("INSERT INTO config(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+    [k, v == null ? null : String(v)]);
+  _ts = 0;
+};
+
+// ---- orgs ----
+async function ensureDefaultOrg() {
+  await q("INSERT INTO orgs(id,slug,name) VALUES(1,'default','Organización') ON CONFLICT(id) DO NOTHING");
+  await q("SELECT setval(pg_get_serial_sequence('orgs','id'), GREATEST((SELECT MAX(id) FROM orgs),1))");
+}
+
+// ---- usuarios ----
+export const getUserByEmail = async (email, org = 1) =>
+  (await q("SELECT * FROM users WHERE org_id=$1 AND lower(email)=lower($2)", [org, email])).rows[0] || null;
+export async function createUser({ email, name = "", org = 1, status = "active" }) {
+  const r = await q("INSERT INTO users(org_id,email,name,status) VALUES($1,$2,$3,$4) RETURNING id", [org, email, name, status]);
+  return r.rows[0].id;
+}
+export const setUserStatus = async (id, status) => void (await q("UPDATE users SET status=$1 WHERE id=$2", [status, id]));
+
+// ---- factores de auth (password / totp / recovery / …) ----
+export async function setPasswordFactor(userId, pw) {
+  await q("DELETE FROM auth_factors WHERE user_id=$1 AND kind='password'", [userId]);
+  await q("INSERT INTO auth_factors(user_id,kind,secret,confirmed_at) VALUES($1,'password',$2,now())", [userId, hashPassword(pw)]);
+}
+export const getPasswordHash = async (userId) =>
+  (await q("SELECT secret FROM auth_factors WHERE user_id=$1 AND kind='password' LIMIT 1", [userId])).rows[0]?.secret || null;
+export const getTotpFactor = async (userId) =>
+  (await q("SELECT secret FROM auth_factors WHERE user_id=$1 AND kind='totp' AND confirmed_at IS NOT NULL LIMIT 1", [userId])).rows[0] || null;
+
+// ---- apps (catálogo: cada app DECLARA sus roles; Lockatus los asigna) ----
+export async function ensureApp(slug, name, roles, redirects = []) {
+  await q(`INSERT INTO apps(slug,name,roles,redirect_uris) VALUES($1,$2,$3,$4)
+           ON CONFLICT(slug) DO UPDATE SET name=excluded.name, roles=excluded.roles`,
+    [slug, name, roles, redirects]);
+}
+export const listApps = async () => (await q("SELECT slug,name,roles FROM apps ORDER BY name")).rows;
+
+// ---- asignaciones de rol (la matriz de accesos) ----
+export const assignRole = async (userId, appSlug, role, by) => void (await q(
+  `INSERT INTO role_assignments(user_id,app_slug,role,granted_by) VALUES($1,$2,$3,$4)
+   ON CONFLICT(user_id,app_slug) DO UPDATE SET role=excluded.role, granted_by=excluded.granted_by, granted=now()`,
+  [userId, appSlug, role, by]));
+export const revokeRole = async (userId, appSlug) => void (await q("DELETE FROM role_assignments WHERE user_id=$1 AND app_slug=$2", [userId, appSlug]));
+export const rolesDe = async (userId) =>
+  Object.fromEntries((await q("SELECT app_slug,role FROM role_assignments WHERE user_id=$1", [userId])).rows.map((r) => [r.app_slug, r.role]));
+
+// ---- auditoría de seguridad (siempre on) ----
+export const auditSec = async (actor, event, target = "", org = 1, ip = "") =>
+  void (await q("INSERT INTO audit_security(org_id,actor,event,target,ip) VALUES($1,$2,$3,$4,$5)", [org, actor, event, target, ip]));
+
+// ---- seed / comisión inicial ----
+export async function seedAdmin() {
+  await ensureDefaultOrg();
+  // Catálogo de la suite, para que la matriz de accesos tenga sentido out-of-the-box.
+  await ensureApp("lockatus", "Lockatus", ["admin"]);
+  await ensureApp("escriba", "Escriba", ["dueño", "editor", "lector"]);
+  await ensureApp("fisherboy", "Fisherboy", ["admin", "editor", "lector"]);
+  await ensureApp("anonimal", "Anonimal", ["admin", "editor", "lector"]);
+  await ensureApp("fulgoria", "Fulgoria", ["admin", "editor", "lector"]);
+  await ensureApp("selega", "Selega", ["agente", "supervisor", "auditor", "admin", "superadmin"]);
+
+  const existing = await getUserByEmail(config.adminEmail);
+  if (existing) {
+    if (config.adminPass) await setPasswordFactor(existing.id, config.adminPass); // reset → nunca quedás afuera
+    return null;
+  }
+  const pass = config.adminPass || randomBytes(6).toString("base64url");
+  const id = await createUser({ email: config.adminEmail, name: "Admin" });
+  await setPasswordFactor(id, pass);
+  await assignRole(id, "lockatus", "admin", "sistema");
+  await auditSec("sistema", "seed_admin", config.adminEmail);
+  return config.adminPass ? null : pass; // pass generada → se imprime una vez
+}

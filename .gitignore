@@ -1,0 +1,25 @@
+# Dependencias
+node_modules/
+
+# Secretos / entorno — NUNCA subir
+.env
+.env.*
+!.env.example
+
+# Claves privadas (la de firma se persiste cifrada en la DB; este dir es por si se montan claves)
+keys/
+*.pem
+
+# Bases de datos locales (dev/preview) — datos, no código
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# Tooling local / logs
+.claude/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

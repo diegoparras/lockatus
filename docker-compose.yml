@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: lockatus-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lockatus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en .env (copiá .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:-lockatus}
+    ports:
+      - "127.0.0.1:55433:5432"   # SOLO localhost para dev/preview. En producción sacá esta línea.
+    volumes:
+      - lockatus-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lockatus} -d ${POSTGRES_DB:-lockatus}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  lockatus:
+    image: ghcr.io/diegoparras/lockatus:latest
+    build: .
+    container_name: lockatus
+    ports:
+      - "${LOCKATUS_PORT:-8081}:8080"
+    environment:
+      LOCKATUS_ADMIN_EMAIL: ${LOCKATUS_ADMIN_EMAIL:-admin@lockatus.local}
+      LOCKATUS_ADMIN_PASS: ${LOCKATUS_ADMIN_PASS:-}          # vacío → se genera y se imprime UNA vez
+      LOCKATUS_SECRET: ${LOCKATUS_SECRET:?Definí LOCKATUS_SECRET en .env (clave maestra)}
+      LOCKATUS_ISSUER: ${LOCKATUS_ISSUER:-http://localhost:8081}
+      LOCKATUS_SECURE_COOKIE: ${LOCKATUS_SECURE_COOKIE:-0}
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-lockatus}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lockatus}"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  lockatus-pg:
