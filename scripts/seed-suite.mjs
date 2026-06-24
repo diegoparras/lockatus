@@ -18,6 +18,7 @@ const APPS = {
   fulgoria:  { cb: "/callback",              port: process.env.FULGORIA_PORT || 3000, role: "admin" },
   anonimal:  { cb: "/callback",              port: process.env.ANONIMAL_PORT || 8097, role: "admin" },
   fisherboy: { cb: "/auth/callback",         port: process.env.FISHERBOY_PORT || 8092, role: "dios" },
+  trustux:   { cb: "/callback",              port: process.env.TRUSTUX_PORT || 8095, role: "admin" },
 };
 
 let cookie = "";
@@ -51,4 +52,4 @@ for (const [slug, a] of Object.entries(APPS)) {
   const rr = await call("PUT", "/api/admin/users/1/role", { app: slug, role: a.role });
   console.log(`  ${slug.padEnd(10)} redirect=${ru.status} role(${a.role})=${rr.status}  → ${redirect}`);
 }
-console.log("seed-suite: listo ✅");
+console.log("seed-suite: listo");
