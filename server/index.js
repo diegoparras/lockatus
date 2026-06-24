@@ -35,6 +35,11 @@ const server = http.createServer(async (req, res) => {
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "no-referrer",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+      // Defensa en profundidad: solo recursos propios. `data:` en img por el QR del 2FA;
+      // `unsafe-inline` en style por los style="" que arma el front. Sin framing, sin object.
+      "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+        "script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     });
     res.end(data);
   } catch { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("not found"); }

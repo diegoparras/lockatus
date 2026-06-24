@@ -49,6 +49,23 @@ La **clave maestra** `LOCKATUS_SECRET` cifra los secretos TOTP y firma la sesió
 | `LOCKATUS_SECURE_COOKIE` | `0` | poné `1` detrás de TLS |
 | `LOCKATUS_PORT` | `8081` | puerto del host |
 
+## Integrar una app (federación)
+
+Una app se federa con Lockatus sin volverse multiusuario por dentro: Lockatus es su tabla de
+usuarios externa. Pasos:
+
+1. **Registrar la app**: en el panel (o por API) cargá su `redirect_uri` en el catálogo. Las apps
+   de la suite ya vienen sembradas con su catálogo de roles.
+2. **Asignar accesos**: en la matriz, dale a cada persona su rol en esa app (sin rol = sin acceso).
+3. **En la app (Node)**: usá el cliente [`client/lockatus-client.mjs`](client/lockatus-client.mjs) —
+   `beginLogin` / `handleCallback` / `getUser` / `logout`. El `getUser(req).role` viene del token;
+   tu app aplica ese rol con su lógica. Todo detrás de un flag (`AUTH_MODE=local|federado`,
+   default `local` → la app sigue con su login propio; no rompe nada).
+
+Ejemplo completo y corrible: [`examples/demo-app/server.mjs`](examples/demo-app/server.mjs)
+(`npm run demo`, con Lockatus arriba). El flujo es OIDC estándar (Authorization Code + PKCE), así
+que cualquier cliente OIDC sirve — y las apps quedan listas para apuntar a otro IdP si hiciera falta.
+
 ## Stack
 
 Node (servidor HTTP propio) · PostgreSQL (`pg`) · `jose` (JWT/JWKS RS256) · `otplib` (TOTP) ·
