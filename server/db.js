@@ -183,7 +183,7 @@ export async function seedAdmin() {
   // Catálogo de la suite, para que la matriz de accesos tenga sentido out-of-the-box.
   await ensureApp("lockatus", "Lockatus", ["admin"]);
   await ensureApp("escriba", "Escriba", ["dueño", "editor", "lector"]);
-  await ensureApp("fisherboy", "Fisherboy", ["admin", "editor", "lector"]);
+  await ensureApp("fisherboy", "Fisherboy", ["dios", "angel", "humano"]);
   await ensureApp("anonimal", "Anonimal", ["admin", "editor", "lector"]);
   await ensureApp("fulgoria", "Fulgoria", ["admin", "editor", "lector"]);
   await ensureApp("selega", "Selega", ["agente", "supervisor", "auditor", "admin", "superadmin"]);
