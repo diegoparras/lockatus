@@ -35,6 +35,8 @@ export function decryptSecret(stored) {
 }
 
 export const sha256 = (s) => createHash("sha256").update(String(s)).digest("hex");
+// PKCE S256: BASE64URL(SHA256(code_verifier)).
+export const sha256b64url = (s) => createHash("sha256").update(String(s)).digest("base64url");
 export const randomToken = (bytes = 32) => randomBytes(bytes).toString("base64url");
 
 // Códigos de recuperación de 2FA: legibles, agrupados. Se guarda el hash, nunca el código.

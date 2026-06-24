@@ -29,5 +29,6 @@ export async function initKeys() {
 }
 
 export const getPrivateKey = () => _priv;
+export const getPublicKey = () => _pub;
 export const getKid = () => _kid;
 export const getJwks = () => _jwks || { keys: [] };

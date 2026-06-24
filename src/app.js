@@ -46,6 +46,8 @@ function viewLogin() {
     const r = await api("POST", "/api/login", body);
     if (r.data.need_totp) { totpEl.style.display = ""; totpEl.focus(); msg.textContent = "Ingresá tu código de 2FA."; return; }
     if (!r.ok) { msg.textContent = r.data.error || "No se pudo ingresar"; return; }
+    const ret = new URLSearchParams(location.search).get("return");
+    if (ret && ret.startsWith("/")) { location.href = ret; return; } // volver al /authorize del SSO
     boot();
   });
 }

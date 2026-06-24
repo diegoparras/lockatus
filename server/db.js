@@ -4,7 +4,7 @@
 import pg from "pg";
 import { randomBytes } from "node:crypto";
 import { config } from "./config.js";
-import { hashPassword } from "./crypto.js";
+import { hashPassword, sha256 } from "./crypto.js";
 
 const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
 const q = (text, params) => pool.query(text, params);
@@ -145,6 +145,29 @@ export const listMatrix = async (org = 1) => (await q(`
     COALESCE(jsonb_object_agg(ra.app_slug, ra.role) FILTER (WHERE ra.app_slug IS NOT NULL), '{}'::jsonb) AS roles
   FROM users u LEFT JOIN role_assignments ra ON ra.user_id=u.id
   WHERE u.org_id=$1 GROUP BY u.id ORDER BY lower(u.email)`, [org])).rows;
+
+export const getApp = async (slug) => (await q("SELECT slug,name,roles,redirect_uris FROM apps WHERE slug=$1", [slug])).rows[0] || null;
+export const setRedirectUris = async (slug, uris) => void (await q("UPDATE apps SET redirect_uris=$1 WHERE slug=$2", [uris, slug]));
+export const roleFor = async (userId, appSlug) => (await q("SELECT role FROM role_assignments WHERE user_id=$1 AND app_slug=$2", [userId, appSlug])).rows[0]?.role || null;
+
+// ---- OIDC: códigos de autorización (un solo uso, cortos) + refresh tokens ----
+export async function saveAuthCode({ code, userId, app, redirectUri, challenge, scope, nonce, ttlSec = 60 }) {
+  await q(`INSERT INTO auth_codes(code_hash,user_id,app_slug,redirect_uri,code_challenge,scope,nonce,expires)
+           VALUES($1,$2,$3,$4,$5,$6,$7, now() + ($8 || ' seconds')::interval)`,
+    [sha256(code), userId, app, redirectUri, challenge, scope, nonce, String(ttlSec)]);
+}
+// Canjea el código: lo BORRA y lo devuelve (atómico → no se puede reusar).
+export async function takeAuthCode(code) {
+  const r = await q(`DELETE FROM auth_codes WHERE code_hash=$1 AND expires > now()
+                     RETURNING user_id, app_slug, redirect_uri, code_challenge, scope, nonce`, [sha256(code)]);
+  return r.rows[0] || null;
+}
+export async function saveRefreshToken({ token, userId, app, ttlMs }) {
+  await q(`INSERT INTO refresh_tokens(token_hash,user_id,app_slug,expires)
+           VALUES($1,$2,$3, now() + ($4 || ' milliseconds')::interval)`, [sha256(token), userId, app, String(ttlMs)]);
+}
+export const getRefreshToken = async (token) =>
+  (await q("SELECT user_id, app_slug FROM refresh_tokens WHERE token_hash=$1 AND revoked=false AND expires > now()", [sha256(token)])).rows[0] || null;
 
 // ---- auditoría de seguridad (siempre on) ----
 export const auditSec = async (actor, event, target = "", org = 1, ip = "") =>

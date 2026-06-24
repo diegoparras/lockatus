@@ -6,6 +6,7 @@ import { signSession, verifySession } from "./tokens.js";
 import { verifyPassword, decryptSecret, encryptSecret, randomToken, sha256, genRecoveryCodes } from "./crypto.js";
 import { verifyTotp, newSecret, otpauthUrl, qrDataUrl } from "./totp.js";
 import * as db from "./db.js";
+import * as oidc from "./oidc.js";
 
 function send(res, code, obj, cookie) {
   const h = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
@@ -66,6 +67,11 @@ export async function handle(req, res, path, dbOk) {
     id_token_signing_alg_values_supported: ["RS256"],
     scopes_supported: ["openid", "profile", "email", "roles"],
   });
+
+  // ---- OIDC (Authorization Code + PKCE) ----
+  if (path === "/authorize" && m === "GET") return oidc.authorize(req, res, getSession(req));
+  if (path === "/token" && m === "POST") return oidc.token(req, res);
+  if (path === "/userinfo" && m === "GET") return oidc.userinfo(req, res);
 
   // ---- sesión del hub ----
   if (path === "/api/login" && m === "POST") {
@@ -164,6 +170,15 @@ export async function handle(req, res, path, dbOk) {
       const id = await db.createUserWithPassword({ email, name: String(b.name || "") }, tempPass);
       await db.auditSec(actor, "crear_usuario", email);
       return send(res, 201, { ok: true, id, tempPass });
+    }
+
+    if (seg[2] === "apps" && seg[3] && seg[4] === "redirect-uris" && m === "PUT") {
+      const b = await readBody(req);
+      if (!b || !Array.isArray(b.redirect_uris)) return send(res, 400, { error: "redirect_uris debe ser una lista" });
+      if (!(await db.getApp(seg[3]))) return send(res, 404, { error: "app desconocida" });
+      await db.setRedirectUris(seg[3], b.redirect_uris.map(String));
+      await db.auditSec(actor, "set_redirect_uris", seg[3]);
+      return send(res, 200, { ok: true });
     }
 
     if (seg[2] === "users" && seg[3]) {
