@@ -98,7 +98,7 @@ export async function handle(req, res, path, dbOk) {
     fails.delete(email);
     await db.auditSec(email, "login", "", u.org_id);
     const cookie = setCookie(signSession({ uid: u.id, email: u.email, exp: Date.now() + config.sessionTtlMs }), config.sessionTtlMs / 1000);
-    return send(res, 200, { ok: true, user: { id: u.id, email: u.email, name: u.name } }, cookie);
+    return send(res, 200, { ok: true, user: { id: u.id, email: u.email, name: u.name }, must_change: u.must_change_password }, cookie);
   }
 
   if (path === "/api/logout" && m === "POST")
@@ -111,7 +111,21 @@ export async function handle(req, res, path, dbOk) {
     if (!u || u.status !== "active") return send(res, 401, { error: "sesión inválida" });
     const roles = await db.rolesDe(u.id);
     const totp = !!(await db.getTotpFactor(u.id));
-    return send(res, 200, { user: { id: u.id, email: u.email, name: u.name }, roles, totp, admin: roles.lockatus === "admin" });
+    return send(res, 200, { user: { id: u.id, email: u.email, name: u.name }, roles, totp, must_change: u.must_change_password, admin: roles.lockatus === "admin" });
+  }
+
+  // ---- cuenta propia: cambiar contraseña (invalida sesiones en todas las apps) ----
+  if (path === "/api/account/password" && m === "POST") {
+    const s = getSession(req); if (!s) return send(res, 401, { error: "no autenticado" });
+    const b = await readBody(req); if (!b) return send(res, 400, { error: "JSON inválido" });
+    const u = await db.getUserById(s.uid);
+    if (!verifyPassword(String(b.current || ""), await db.getPasswordHash(u.id))) return send(res, 401, { error: "Contraseña actual incorrecta" });
+    if (String(b.new || "").length < 8) return send(res, 400, { error: "La nueva contraseña debe tener al menos 8 caracteres" });
+    await db.setPasswordFactor(u.id, String(b.new));
+    await db.setMustChange(u.id, false);
+    await db.revokeAllRefresh(u.id);
+    await db.auditSec(u.email, "password_change", "", u.org_id);
+    return send(res, 200, { ok: true });
   }
 
   // ---- 2FA del propio usuario (sobre su sesión) ----
@@ -168,6 +182,7 @@ export async function handle(req, res, path, dbOk) {
       if (await db.getUserByEmail(email)) return send(res, 409, { error: "ya existe un usuario con ese correo" });
       const tempPass = randomToken(9);
       const id = await db.createUserWithPassword({ email, name: String(b.name || "") }, tempPass);
+      await db.setMustChange(id, true); // la temporal hay que cambiarla al primer ingreso
       await db.auditSec(actor, "crear_usuario", email);
       return send(res, 201, { ok: true, id, tempPass });
     }
@@ -211,6 +226,17 @@ export async function handle(req, res, path, dbOk) {
         await db.removeTotpFactor(id);
         await db.auditSec(actor, "reset_2fa", target.email);
         return send(res, 200, { ok: true });
+      }
+
+      // Reset de contraseña por admin: temporal de un solo uso + obliga a cambiarla al ingresar.
+      // NO toca el 2FA (el reset no es un bypass del segundo factor) y mata los refresh tokens.
+      if (seg[4] === "reset-password" && m === "POST") {
+        const tempPass = randomToken(9);
+        await db.setPasswordFactor(id, tempPass);
+        await db.setMustChange(id, true);
+        await db.revokeAllRefresh(id);
+        await db.auditSec(actor, "reset_password", target.email);
+        return send(res, 200, { ok: true, tempPass });
       }
     }
     return send(res, 404, { error: "ruta admin no encontrada" });

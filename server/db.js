@@ -24,6 +24,7 @@ export async function initDb() {
       id SERIAL PRIMARY KEY, org_id INTEGER NOT NULL DEFAULT 1 REFERENCES orgs(id),
       email TEXT NOT NULL, name TEXT, status TEXT NOT NULL DEFAULT 'active',
       creado TIMESTAMPTZ DEFAULT now(), UNIQUE(org_id, email));
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT false;
     CREATE TABLE IF NOT EXISTS auth_factors (
       id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       kind TEXT NOT NULL, secret TEXT, data JSONB DEFAULT '{}',
@@ -116,7 +117,8 @@ export const revokeRole = async (userId, appSlug) => void (await q("DELETE FROM 
 export const rolesDe = async (userId) =>
   Object.fromEntries((await q("SELECT app_slug,role FROM role_assignments WHERE user_id=$1", [userId])).rows.map((r) => [r.app_slug, r.role]));
 
-export const getUserById = async (id) => (await q("SELECT id,email,name,status,org_id FROM users WHERE id=$1", [id])).rows[0] || null;
+export const getUserById = async (id) => (await q("SELECT id,email,name,status,org_id,must_change_password FROM users WHERE id=$1", [id])).rows[0] || null;
+export const setMustChange = async (id, v) => void (await q("UPDATE users SET must_change_password=$1 WHERE id=$2", [!!v, id]));
 export const removeTotpFactor = async (userId) => void (await q("DELETE FROM auth_factors WHERE user_id=$1 AND kind IN ('totp','recovery')", [userId]));
 // Enrolado de 2FA: el secreto entra SIN confirmar; recién al validar un código se confirma.
 export async function setTotpUnconfirmed(userId, encSecret) {
@@ -168,6 +170,8 @@ export async function saveRefreshToken({ token, userId, app, ttlMs }) {
 }
 export const getRefreshToken = async (token) =>
   (await q("SELECT user_id, app_slug FROM refresh_tokens WHERE token_hash=$1 AND revoked=false AND expires > now()", [sha256(token)])).rows[0] || null;
+// Al cambiar/resetear la contraseña: matar todos los refresh tokens del usuario (lo saca de todas las apps).
+export const revokeAllRefresh = async (userId) => void (await q("UPDATE refresh_tokens SET revoked=true WHERE user_id=$1", [userId]));
 
 // ---- auditoría de seguridad (siempre on) ----
 export const auditSec = async (actor, event, target = "", org = 1, ip = "") =>

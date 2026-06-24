@@ -19,6 +19,7 @@ function toast(msg, bad) {
 
 async function boot() {
   const me = await api("GET", "/api/me");
+  if (me.ok && me.data.must_change) return viewPassword(true);
   if (me.ok && me.data.admin) return viewMatrix();
   if (me.ok) return viewMessage(`Sesión iniciada como ${esc(me.data.user.email)}, pero sin acceso al panel de Lockatus.`);
   viewLogin();
@@ -46,6 +47,7 @@ function viewLogin() {
     const r = await api("POST", "/api/login", body);
     if (r.data.need_totp) { totpEl.style.display = ""; totpEl.focus(); msg.textContent = "Ingresá tu código de 2FA."; return; }
     if (!r.ok) { msg.textContent = r.data.error || "No se pudo ingresar"; return; }
+    if (r.data.must_change) return viewPassword(true); // contraseña temporal → cambiar sí o sí
     const ret = new URLSearchParams(location.search).get("return");
     if (ret && ret.startsWith("/")) { location.href = ret; return; } // volver al /authorize del SSO
     boot();
@@ -76,14 +78,14 @@ async function viewMatrix() {
         <span class="uinfo"><b>${esc(u.name || u.email.split("@")[0])}</b><span class="email">${esc(u.email)}${u.status !== "active" ? " · deshabilitado" : ""}</span></span></div></td>
       <td class="tfa">${u.totp ? '<span class="ok" title="2FA activo">●</span>' : '<span class="no">—</span>'}</td>
       ${apps.map((a) => cell(u, a)).join("")}
-      <td class="acc"><button class="mini" data-act="status" data-uid="${u.id}" data-status="${u.status}">${u.status === "active" ? "Deshabilitar" : "Habilitar"}</button>${u.totp ? `<button class="mini" data-act="reset" data-uid="${u.id}">Reset 2FA</button>` : ""}</td>
+      <td class="acc"><button class="mini" data-act="resetpw" data-uid="${u.id}">Reset pass</button><button class="mini" data-act="status" data-uid="${u.id}" data-status="${u.status}">${u.status === "active" ? "Deshabilitar" : "Habilitar"}</button>${u.totp ? `<button class="mini" data-act="reset" data-uid="${u.id}">Reset 2FA</button>` : ""}</td>
     </tr>`;
 
   app.innerHTML = `
     <div class="panel">
       <div class="topbar">
         <div><div class="crumb">Lockatus · Admin</div><h2>Accesos</h2></div>
-        <div class="actions"><button id="nuevo">+ Usuario</button><button id="mi2fa" class="ghost">Mi 2FA</button><button id="logout" class="ghost">Salir</button></div>
+        <div class="actions"><button id="nuevo">+ Usuario</button><button id="mi2fa" class="ghost">Mi 2FA</button><button id="mipass" class="ghost">Mi contraseña</button><button id="logout" class="ghost">Salir</button></div>
       </div>
       <form id="newuser" class="newuser" style="display:none">
         <input id="nu-email" type="email" placeholder="correo@org.com" required />
@@ -95,6 +97,7 @@ async function viewMatrix() {
 
   document.getElementById("logout").onclick = async () => { await api("POST", "/api/logout"); boot(); };
   document.getElementById("mi2fa").onclick = () => view2fa();
+  document.getElementById("mipass").onclick = () => viewPassword(false);
   document.getElementById("nuevo").onclick = () => { const f = document.getElementById("newuser"); f.style.display = f.style.display === "none" ? "flex" : "none"; };
   document.getElementById("newuser").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -111,11 +114,16 @@ async function viewMatrix() {
   }));
 
   app.querySelectorAll("button[data-act]").forEach((btn) => btn.onclick = async () => {
-    const uid = btn.dataset.uid;
-    if (btn.dataset.act === "status") {
+    const uid = btn.dataset.uid, act = btn.dataset.act;
+    if (act === "status") {
       const next = btn.dataset.status === "active" ? "disabled" : "active";
       const r4 = await api("PUT", `/api/admin/users/${uid}/status`, { status: next });
       if (!r4.ok) return toast(r4.data.error || "Error", true);
+    } else if (act === "resetpw") {
+      const r6 = await api("POST", `/api/admin/users/${uid}/reset-password`);
+      if (!r6.ok) return toast(r6.data.error || "Error", true);
+      toast(`Contraseña reseteada · temporal: ${r6.data.tempPass}`);
+      return;
     } else {
       const r5 = await api("POST", `/api/admin/users/${uid}/reset-2fa`);
       if (!r5.ok) return toast(r5.data.error || "Error", true);
@@ -163,6 +171,27 @@ async function view2fa() {
       <pre class="codes">${r.data.recovery.map(esc).join("\n")}</pre>
       <button id="done">Listo</button></div></div></main>`;
     document.getElementById("done").onclick = boot;
+  };
+}
+
+// ---------- contraseña propia (cambio forzado o voluntario) ----------
+function viewPassword(forced) {
+  app.innerHTML = `<main class="wrap"><div class="card"><div class="col">
+    <div class="brand"><span class="lock"></span><h1>${forced ? "Cambiá tu contraseña" : "Mi contraseña"}</h1></div>
+    <p class="sub">${forced ? "Tu contraseña es temporal. Definí una nueva para continuar." : "Cambiarla cierra tus sesiones en todas las apps."}</p>
+    <input id="cur" type="password" placeholder="Contraseña actual" autocomplete="current-password" />
+    <input id="nw" type="password" placeholder="Nueva contraseña (mín. 8)" autocomplete="new-password" />
+    <input id="nw2" type="password" placeholder="Repetir nueva" autocomplete="new-password" />
+    <div class="row2"><button id="save">Guardar</button>${forced ? `<button id="out" class="ghost">Salir</button>` : `<button id="back" class="ghost">Volver</button>`}</div>
+    <p class="hint err" id="m3"></p></div></div></main>`;
+  if (forced) document.getElementById("out").onclick = async () => { await api("POST", "/api/logout"); boot(); };
+  else document.getElementById("back").onclick = boot;
+  document.getElementById("save").onclick = async () => {
+    const nw = document.getElementById("nw").value, m3 = document.getElementById("m3");
+    if (nw !== document.getElementById("nw2").value) { m3.textContent = "Las contraseñas nuevas no coinciden"; return; }
+    const r = await api("POST", "/api/account/password", { current: document.getElementById("cur").value, new: nw });
+    if (!r.ok) { m3.textContent = r.data.error || "Error"; return; }
+    toast("Contraseña actualizada"); boot();
   };
 }
 

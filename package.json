@@ -8,7 +8,7 @@
     "start": "node server/index.js",
     "serve": "node server/index.js",
     "test": "node test/core-check.mjs",
-    "test:integ": "node test/twofa-check.mjs && node test/oidc-check.mjs"
+    "test:integ": "node test/twofa-check.mjs && node test/oidc-check.mjs && node test/recovery-check.mjs"
   },
   "dependencies": {
     "pg": "^8.13.0",
