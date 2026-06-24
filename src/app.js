@@ -109,12 +109,19 @@ async function viewMatrix() {
     <div class="panel">
       <div class="topbar">
         <div><div class="crumb">Lockatus · Admin</div><h2>Accesos</h2></div>
-        <div class="actions"><button id="nuevo">+ Usuario</button><button id="mi2fa" class="ghost">Mi 2FA</button><button id="mipass" class="ghost">Mi contraseña</button><button id="logout" class="ghost">Salir</button></div>
+        <div class="actions"><button id="nuevo">+ Usuario</button><button id="nuevoapp" class="ghost">+ App</button><button id="mi2fa" class="ghost">Mi 2FA</button><button id="mipass" class="ghost">Mi contraseña</button><button id="logout" class="ghost">Salir</button></div>
       </div>
       <form id="newuser" class="newuser" style="display:none">
         <input id="nu-email" type="email" placeholder="correo@org.com" required />
         <input id="nu-name" placeholder="Nombre (opcional)" />
         <button type="submit">Crear</button>
+      </form>
+      <form id="newapp" class="newuser" style="display:none">
+        <input id="na-slug" placeholder="slug (ej. trustux)" autocomplete="off" required />
+        <input id="na-name" placeholder="Nombre visible (opcional)" />
+        <input id="na-roles" placeholder="roles separados por coma (ej. admin, editor, lector)" required />
+        <input id="na-redirect" placeholder="redirect_uri (opcional, ej. https://miapp/callback)" />
+        <button type="submit">Agregar app</button>
       </form>
       <div class="tablewrap"><table class="matrix"><thead><tr>${head}</tr></thead><tbody>${users.map(row).join("")}</tbody></table></div>
     </div>`;
@@ -128,6 +135,21 @@ async function viewMatrix() {
     const r2 = await api("POST", "/api/admin/users", { email: document.getElementById("nu-email").value, name: document.getElementById("nu-name").value });
     if (!r2.ok) return toast(r2.data.error || "No se pudo crear", true);
     toast(`Usuario creado · contraseña temporal: ${r2.data.tempPass}`);
+    viewMatrix();
+  });
+
+  // Alta de una app NUEVA de la familia (onboarding desde la propia matriz, sin tocar código).
+  document.getElementById("nuevoapp").onclick = () => { const f = document.getElementById("newapp"); f.style.display = f.style.display === "none" ? "flex" : "none"; };
+  document.getElementById("newapp").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const slug = document.getElementById("na-slug").value.trim().toLowerCase();
+    const roles = document.getElementById("na-roles").value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    const name = document.getElementById("na-name").value.trim() || slug;
+    const redirect = document.getElementById("na-redirect").value.trim();
+    const redirect_uris = redirect ? redirect.split(/[\s,]+/).filter(Boolean) : [];
+    const ra = await api("PUT", `/api/admin/apps/${slug}`, { name, roles, redirect_uris });
+    if (!ra.ok) return toast(ra.data.error || "No se pudo agregar la app", true);
+    toast(`App agregada: ${slug} (${roles.join(", ")})`);
     viewMatrix();
   });
 
