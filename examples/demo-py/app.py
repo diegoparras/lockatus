@@ -75,6 +75,6 @@ async def home(request: Request):
     u = lk.unsign(request.cookies.get(SESSION, ""))
     if u:
         return page(f"<p>Entraste como <b>{u['email']}</b>.</p>"
-                    f"<p>Tu rol en esta app: <b style='color:#6655d6'>{u.get('role')}</b> — lo dijo Lockatus, esta app no tiene usuarios propios.</p>"
+                    f"<p>Tu rol en esta app: <b style='color:#6c4fb3'>{u.get('role')}</b> — lo dijo Lockatus, esta app no tiene usuarios propios.</p>"
                     f"<p><a href='/logout'>Cerrar sesión</a></p>")
     return page("<p>No estás logueado en esta app.</p><p><a href='/login'>Entrar con Lockatus →</a></p>")

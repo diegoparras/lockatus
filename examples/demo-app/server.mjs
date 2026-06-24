@@ -29,7 +29,7 @@ http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
   res.end(page(user
     ? `<p>Entraste como <b>${user.email}</b>.</p>
-       <p>Tu rol en esta app: <b style="color:#6655d6">${user.role}</b> — lo dijo Lockatus, esta app no tiene usuarios propios.</p>
+       <p>Tu rol en esta app: <b style="color:#6c4fb3">${user.role}</b> — lo dijo Lockatus, esta app no tiene usuarios propios.</p>
        <p><a href="/logout">Cerrar sesión</a></p>`
     : `<p>No estás logueado en esta app.</p><p><a href="/login">Entrar con Lockatus →</a></p>`));
 }).listen(PORT, () => console.log(`App demo en http://localhost:${PORT}  (issuer: ${ISSUER}, client_id: ${CLIENT_ID})`));

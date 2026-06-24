@@ -1,4 +1,4 @@
-:root { --bg:#fafafa; --card:#fff; --ink:#1a1a22; --muted:#6b6b76; --line:#e6e6ea; --acc:#6655d6; --acc-ink:#fff; }
+:root { --bg:#fafafa; --card:#fff; --ink:#1a1a22; --muted:#6b6b76; --line:#e6e6ea; --acc:#6c4fb3; --acc-ink:#fff; }
 @media (prefers-color-scheme: dark) { :root { --bg:#16161a; --card:#1e1e24; --ink:#ececf0; --muted:#9a9aa6; --line:#2c2c34; } }
 * { box-sizing: border-box; }
 body { margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
