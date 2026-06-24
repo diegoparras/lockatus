@@ -187,6 +187,24 @@ export async function handle(req, res, path, dbOk) {
       return send(res, 201, { ok: true, id, tempPass });
     }
 
+    // Alta/edición de una app de la familia Escriba: onboarding de apps NUEVAS sin tocar el
+    // código del hub ni redeployar. La app declara su slug + catálogo de roles (+ redirect_uris
+    // opcionales). Luego se le asignan roles a los usuarios en la matriz, igual que las demás.
+    if (seg[2] === "apps" && seg[3] && !seg[4] && m === "PUT") {
+      const b = await readBody(req);
+      if (!b) return send(res, 400, { error: "JSON inválido" });
+      const slug = String(seg[3]).toLowerCase();
+      if (!/^[a-z][a-z0-9-]{1,30}$/.test(slug)) return send(res, 400, { error: "slug inválido (a-z, 0-9, '-')" });
+      const roles = Array.isArray(b.roles) ? b.roles.map((r) => String(r).trim()).filter(Boolean) : [];
+      if (!roles.length) return send(res, 400, { error: "roles: lista no vacía de los roles que declara la app" });
+      const name = String(b.name || slug);
+      const redirects = Array.isArray(b.redirect_uris) ? b.redirect_uris.map(String) : [];
+      await db.ensureApp(slug, name, roles, redirects);
+      if (redirects.length) await db.setRedirectUris(slug, redirects); // ensureApp solo setea redirects al crear
+      await db.auditSec(actor, "alta_app", `${slug} [${roles.join(",")}]`);
+      return send(res, 200, { ok: true, slug, name, roles });
+    }
+
     if (seg[2] === "apps" && seg[3] && seg[4] === "redirect-uris" && m === "PUT") {
       const b = await readBody(req);
       if (!b || !Array.isArray(b.redirect_uris)) return send(res, 400, { error: "redirect_uris debe ser una lista" });

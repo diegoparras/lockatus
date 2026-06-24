@@ -186,6 +186,7 @@ export async function seedAdmin() {
   await ensureApp("fisherboy", "Fisherboy", ["dios", "angel", "humano"]);
   await ensureApp("anonimal", "Anonimal", ["admin", "editor", "lector"]);
   await ensureApp("fulgoria", "Fulgoria", ["admin", "editor", "lector"]);
+  await ensureApp("trustux", "Trustux", ["admin", "editor", "lector"]);
   await ensureApp("selega", "Selega", ["agente", "supervisor", "auditor", "admin", "superadmin"]);
 
   const existing = await getUserByEmail(config.adminEmail);
