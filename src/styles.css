@@ -11,6 +11,14 @@ body { margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Robot
 form { display: flex; flex-direction: column; gap: 12px; }
 input { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink); font-size: 14px; }
 input:focus { outline: none; border-color: var(--acc); }
+/* Ojito mostrar/ocultar contraseña */
+.pass-wrap { position: relative; display: flex; align-items: center; }
+.pass-wrap > input { flex: 1 1 auto; padding-right: 38px; }
+.pass-toggle { position: absolute; top: 50%; right: 5px; transform: translateY(-50%);
+  width: 30px; height: 30px; display: grid; place-items: center; background: none; border: 0;
+  border-radius: 7px; color: var(--ink); opacity: .5; cursor: pointer; transition: opacity .15s, background .15s; }
+.pass-toggle:hover { opacity: 1; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.pass-toggle svg { width: 17px; height: 17px; }
 button { padding: 11px; border: none; border-radius: 9px; background: var(--acc); color: var(--acc-ink); font-size: 14px; font-weight: 600; cursor: pointer; }
 .hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; line-height: 1.5; }
 .err { color: #c0392b; min-height: 16px; }
