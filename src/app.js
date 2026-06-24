@@ -81,7 +81,7 @@ async function viewMatrix() {
     <div class="panel">
       <div class="topbar">
         <div><div class="crumb">Lockatus · Admin</div><h2>Accesos</h2></div>
-        <div class="actions"><button id="nuevo">+ Usuario</button><button id="logout" class="ghost">Salir</button></div>
+        <div class="actions"><button id="nuevo">+ Usuario</button><button id="mi2fa" class="ghost">Mi 2FA</button><button id="logout" class="ghost">Salir</button></div>
       </div>
       <form id="newuser" class="newuser" style="display:none">
         <input id="nu-email" type="email" placeholder="correo@org.com" required />
@@ -92,6 +92,7 @@ async function viewMatrix() {
     </div>`;
 
   document.getElementById("logout").onclick = async () => { await api("POST", "/api/logout"); boot(); };
+  document.getElementById("mi2fa").onclick = () => view2fa();
   document.getElementById("nuevo").onclick = () => { const f = document.getElementById("newuser"); f.style.display = f.style.display === "none" ? "flex" : "none"; };
   document.getElementById("newuser").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -120,6 +121,47 @@ async function viewMatrix() {
     }
     viewMatrix();
   });
+}
+
+// ---------- 2FA del propio usuario ----------
+async function view2fa() {
+  const me = await api("GET", "/api/me");
+  if (me.data?.totp) {
+    app.innerHTML = `<main class="wrap"><div class="card"><div class="col">
+      <div class="brand"><span class="lock"></span><h1>Mi 2FA</h1></div>
+      <p class="sub">El 2FA está <b>activo</b> en tu cuenta.</p>
+      <input id="dcode" inputmode="numeric" placeholder="Código actual para desactivar" />
+      <div class="row2"><button id="disable" class="ghost">Desactivar</button><button id="back">Volver</button></div>
+      <p class="hint err" id="m2"></p></div></div></main>`;
+    document.getElementById("back").onclick = boot;
+    document.getElementById("disable").onclick = async () => {
+      const r = await api("POST", "/api/2fa/disable", { code: document.getElementById("dcode").value });
+      if (!r.ok) { document.getElementById("m2").textContent = r.data.error || "Error"; return; }
+      toast("2FA desactivado"); boot();
+    };
+    return;
+  }
+  const s = await api("POST", "/api/2fa/setup");
+  if (!s.ok) { toast(s.data.error || "Error", true); return boot(); }
+  app.innerHTML = `<main class="wrap"><div class="card"><div class="col">
+    <div class="brand"><span class="lock"></span><h1>Activar 2FA</h1></div>
+    <p class="sub">Escaneá el QR con Google Authenticator (o el que uses) y confirmá con el código.</p>
+    <img class="qr" src="${s.data.qr}" alt="QR de 2FA" />
+    <p class="mono">${esc(s.data.secret)}</p>
+    <input id="ccode" inputmode="numeric" placeholder="Código de 6 dígitos" />
+    <div class="row2"><button id="confirm">Confirmar</button><button id="back" class="ghost">Cancelar</button></div>
+    <p class="hint err" id="m2"></p></div></div></main>`;
+  document.getElementById("back").onclick = boot;
+  document.getElementById("confirm").onclick = async () => {
+    const r = await api("POST", "/api/2fa/confirm", { code: document.getElementById("ccode").value });
+    if (!r.ok) { document.getElementById("m2").textContent = r.data.error || "Error"; return; }
+    app.innerHTML = `<main class="wrap"><div class="card"><div class="col">
+      <div class="brand"><span class="lock"></span><h1>2FA activado</h1></div>
+      <p class="sub">Guardá estos <b>códigos de recuperación</b>: se muestran una sola vez y cada uno sirve una vez si perdés el teléfono.</p>
+      <pre class="codes">${r.data.recovery.map(esc).join("\n")}</pre>
+      <button id="done">Listo</button></div></div></main>`;
+    document.getElementById("done").onclick = boot;
+  };
 }
 
 boot();

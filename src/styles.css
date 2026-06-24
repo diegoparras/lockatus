@@ -41,3 +41,9 @@ button.mini { padding: 4px 8px; font-size: 11px; font-weight: 500; background: t
 tr.off { opacity: .55; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 16px; border-radius: 9px; font-size: 13px; z-index: 50; max-width: 90vw; }
 .toast.bad { background: #c0392b; }
+.col { display: flex; flex-direction: column; gap: 12px; }
+.row2 { display: flex; gap: 8px; }
+.row2 button { flex: 1; }
+.qr { width: 168px; height: 168px; align-self: center; background: #fff; border-radius: 8px; padding: 6px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; text-align: center; color: var(--muted); letter-spacing: 1px; word-break: break-all; margin: 0; }
+.codes { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; line-height: 1.9; white-space: pre-wrap; color: var(--ink); margin: 0; }

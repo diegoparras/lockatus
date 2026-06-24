@@ -117,7 +117,21 @@ export const rolesDe = async (userId) =>
   Object.fromEntries((await q("SELECT app_slug,role FROM role_assignments WHERE user_id=$1", [userId])).rows.map((r) => [r.app_slug, r.role]));
 
 export const getUserById = async (id) => (await q("SELECT id,email,name,status,org_id FROM users WHERE id=$1", [id])).rows[0] || null;
-export const removeTotpFactor = async (userId) => void (await q("DELETE FROM auth_factors WHERE user_id=$1 AND kind='totp'", [userId]));
+export const removeTotpFactor = async (userId) => void (await q("DELETE FROM auth_factors WHERE user_id=$1 AND kind IN ('totp','recovery')", [userId]));
+// Enrolado de 2FA: el secreto entra SIN confirmar; recién al validar un código se confirma.
+export async function setTotpUnconfirmed(userId, encSecret) {
+  await q("DELETE FROM auth_factors WHERE user_id=$1 AND kind='totp'", [userId]);
+  await q("INSERT INTO auth_factors(user_id,kind,secret) VALUES($1,'totp',$2)", [userId, encSecret]);
+}
+export const getTotpRaw = async (userId) => (await q("SELECT secret, confirmed_at FROM auth_factors WHERE user_id=$1 AND kind='totp' LIMIT 1", [userId])).rows[0] || null;
+export const confirmTotp = async (userId) => void (await q("UPDATE auth_factors SET confirmed_at=now() WHERE user_id=$1 AND kind='totp'", [userId]));
+export async function setRecoveryCodes(userId, hashes) {
+  await q("DELETE FROM auth_factors WHERE user_id=$1 AND kind='recovery'", [userId]);
+  for (const h of hashes) await q("INSERT INTO auth_factors(user_id,kind,secret,data,confirmed_at) VALUES($1,'recovery',$2,'{\"used\":false}',now())", [userId, h]);
+}
+// Consume un código de recuperación (one-shot): lo marca usado y devuelve true si valía.
+export const consumeRecovery = async (userId, hash) =>
+  (await q("UPDATE auth_factors SET data=jsonb_set(data,'{used}','true') WHERE user_id=$1 AND kind='recovery' AND secret=$2 AND (data->>'used') IS DISTINCT FROM 'true' RETURNING id", [userId, hash])).rowCount > 0;
 export async function createUserWithPassword({ email, name = "", org = 1 }, pass) {
   const id = await createUser({ email, name, org });
   await setPasswordFactor(id, pass);

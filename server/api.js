@@ -3,8 +3,8 @@
 import { getJwks } from "./keys.js";
 import { config } from "./config.js";
 import { signSession, verifySession } from "./tokens.js";
-import { verifyPassword, decryptSecret, randomToken } from "./crypto.js";
-import { verifyTotp } from "./totp.js";
+import { verifyPassword, decryptSecret, encryptSecret, randomToken, sha256, genRecoveryCodes } from "./crypto.js";
+import { verifyTotp, newSecret, otpauthUrl, qrDataUrl } from "./totp.js";
 import * as db from "./db.js";
 
 function send(res, code, obj, cookie) {
@@ -82,8 +82,12 @@ export async function handle(req, res, path, dbOk) {
     }
     const totp = await db.getTotpFactor(u.id);
     if (totp) {
-      if (!b.totp) return send(res, 200, { need_totp: true });
-      if (!verifyTotp(b.totp, decryptSecret(totp.secret))) return send(res, 401, { error: "Código 2FA inválido" });
+      const code = String(b.totp || "").trim();
+      if (!code) return send(res, 200, { need_totp: true });
+      // Código del authenticator (6 dígitos) o, de respaldo, un código de recuperación (un solo uso).
+      let okCode = /^\d{6}$/.test(code) && verifyTotp(code, decryptSecret(totp.secret));
+      if (!okCode) okCode = await db.consumeRecovery(u.id, sha256(code.toUpperCase()));
+      if (!okCode) return send(res, 401, { error: "Código 2FA inválido" });
     }
     fails.delete(email);
     await db.auditSec(email, "login", "", u.org_id);
@@ -100,7 +104,45 @@ export async function handle(req, res, path, dbOk) {
     const u = await db.getUserById(s.uid);
     if (!u || u.status !== "active") return send(res, 401, { error: "sesión inválida" });
     const roles = await db.rolesDe(u.id);
-    return send(res, 200, { user: { id: u.id, email: u.email, name: u.name }, roles, admin: roles.lockatus === "admin" });
+    const totp = !!(await db.getTotpFactor(u.id));
+    return send(res, 200, { user: { id: u.id, email: u.email, name: u.name }, roles, totp, admin: roles.lockatus === "admin" });
+  }
+
+  // ---- 2FA del propio usuario (sobre su sesión) ----
+  if (path === "/api/2fa/setup" && m === "POST") {
+    const s = getSession(req); if (!s) return send(res, 401, { error: "no autenticado" });
+    const u = await db.getUserById(s.uid);
+    if (await db.getTotpFactor(u.id)) return send(res, 409, { error: "el 2FA ya está activo" });
+    const secret = newSecret();
+    await db.setTotpUnconfirmed(u.id, encryptSecret(secret));
+    const url = otpauthUrl(u.email, secret);
+    return send(res, 200, { secret, otpauth: url, qr: await qrDataUrl(url) });
+  }
+
+  if (path === "/api/2fa/confirm" && m === "POST") {
+    const s = getSession(req); if (!s) return send(res, 401, { error: "no autenticado" });
+    const b = await readBody(req); if (!b) return send(res, 400, { error: "JSON inválido" });
+    const u = await db.getUserById(s.uid);
+    const raw = await db.getTotpRaw(u.id);
+    if (!raw) return send(res, 400, { error: "no hay un enrolado en curso (pedí setup primero)" });
+    if (!verifyTotp(String(b.code || ""), decryptSecret(raw.secret))) return send(res, 401, { error: "Código inválido" });
+    await db.confirmTotp(u.id);
+    const codes = genRecoveryCodes();
+    await db.setRecoveryCodes(u.id, codes.map(sha256));
+    await db.auditSec(u.email, "2fa_enrolado", "", u.org_id);
+    return send(res, 200, { ok: true, recovery: codes }); // se muestran UNA vez
+  }
+
+  if (path === "/api/2fa/disable" && m === "POST") {
+    const s = getSession(req); if (!s) return send(res, 401, { error: "no autenticado" });
+    const b = await readBody(req); if (!b) return send(res, 400, { error: "JSON inválido" });
+    const u = await db.getUserById(s.uid);
+    const totp = await db.getTotpFactor(u.id);
+    if (!totp) return send(res, 409, { error: "no tenés 2FA activo" });
+    if (!verifyTotp(String(b.code || ""), decryptSecret(totp.secret))) return send(res, 401, { error: "Código inválido" });
+    await db.removeTotpFactor(u.id);
+    await db.auditSec(u.email, "2fa_desactivado", "", u.org_id);
+    return send(res, 200, { ok: true });
   }
 
   // ---- panel de accesos (admin de Lockatus) ----
