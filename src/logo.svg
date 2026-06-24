@@ -1,0 +1,5 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Lockatus">
+  <rect width="64" height="64" rx="14" fill="#6655d6"/>
+  <circle cx="32" cy="26" r="10" fill="#fff"/>
+  <path d="M28 32 L24 50 H40 L36 32 Z" fill="#fff"/>
+</svg>

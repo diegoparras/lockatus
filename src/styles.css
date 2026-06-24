@@ -6,7 +6,7 @@ body { margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Robot
 .card { width: 100%; max-width: 360px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -.02em; }
-.lock { width: 22px; height: 22px; border-radius: 6px; background: var(--acc); display: inline-block; }
+.lock { width: 24px; height: 24px; background: center / contain no-repeat url("/logo.svg"); display: inline-block; }
 .sub { color: var(--muted); font-size: 14px; margin: 6px 0 22px; }
 form { display: flex; flex-direction: column; gap: 12px; }
 input { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink); font-size: 14px; }
