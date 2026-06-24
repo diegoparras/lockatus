@@ -2,6 +2,7 @@
 // No-fatal si Postgres no está: igual levanta y responde /health y /jwks (clave efímera).
 import http from "node:http";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
@@ -10,6 +11,8 @@ import { initKeys } from "./keys.js";
 import { handle } from "./api.js";
 
 const root = normalize(join(dirname(fileURLToPath(import.meta.url)), ".."));
+// Versión: única fuente = package.json. Se inyecta en el HTML (el "Acerca de" la lee del <meta>).
+const VERSION = (() => { try { return JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version || ""; } catch { return ""; } })();
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
   ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png", ".woff2": "font/woff2" };
 const API = new Set(["/health", "/jwks.json", "/authorize", "/token", "/userinfo"]);
@@ -28,7 +31,9 @@ const server = http.createServer(async (req, res) => {
     const rel = path.startsWith("/public/") ? path : "/src" + (path === "/" ? "/index.html" : path);
     const file = normalize(join(root, rel));
     if (!file.startsWith(root)) { res.writeHead(403, txt); return res.end("forbidden"); }
-    const data = await readFile(file);
+    let data = await readFile(file);
+    // index.html: inyectar la versión (placeholder __LOCKATUS_VERSION__) desde package.json.
+    if (extname(file) === ".html") data = Buffer.from(data.toString("utf8").replace(/__LOCKATUS_VERSION__/g, VERSION), "utf8");
     res.writeHead(200, {
       "Content-Type": MIME[extname(file)] || "application/octet-stream",
       "Cache-Control": "no-cache",
