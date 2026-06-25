@@ -17,9 +17,10 @@ export async function signAccessToken({ sub, email, app, role, org }) {
     .sign(getPrivateKey());
 }
 
-// ID token OIDC: identidad del usuario para la app (claims estándar + nonce).
-export async function signIdToken({ sub, email, name, app, nonce }) {
-  const t = new SignJWT({ email, name, ...(nonce ? { nonce } : {}), typ: "id" })
+// ID token OIDC: identidad del usuario para la app (claims estándar + nonce). Incluimos el
+// `role` de la app también acá (además del access token) para las apps que lo leen del id_token.
+export async function signIdToken({ sub, email, name, app, role, nonce }) {
+  const t = new SignJWT({ email, name, ...(role ? { role } : {}), ...(nonce ? { nonce } : {}), typ: "id" })
     .setProtectedHeader({ alg: "RS256", kid: getKid() })
     .setSubject(String(sub)).setIssuer(config.issuer).setAudience(app)
     .setIssuedAt().setExpirationTime("1h");

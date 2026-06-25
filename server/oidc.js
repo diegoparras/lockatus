@@ -90,7 +90,7 @@ async function issue(res, user, app, role, scope, nonce) {
   await db.saveRefreshToken({ token: refresh, userId: user.id, app, ttlMs: config.refreshTokenTtlMs });
   await db.auditSec(user.email, "oidc_token", app, user.org_id);
   const body = { access_token, token_type: "Bearer", expires_in: 600, refresh_token: refresh, scope };
-  if (scope.split(" ").includes("openid")) body.id_token = await signIdToken({ sub: user.id, email: user.email, name: user.name, app, nonce });
+  if (scope.split(" ").includes("openid")) body.id_token = await signIdToken({ sub: user.id, email: user.email, name: user.name, app, role, nonce });
   json(res, 200, body);
 }
 
