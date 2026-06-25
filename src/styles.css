@@ -34,24 +34,78 @@
 .newuser { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .newuser input { flex: 1; min-width: 140px; }
 
-/* Tabla de accesos */
+/* ===========================================================================
+   MATRIZ DE ACCESOS (quién × app → rol)
+   Dos presentaciones de los mismos datos:
+     · ANCHO  → tabla con 1.ª columna "Usuario" STICKY + scroll-x suave si hace falta.
+     · ANGOSTO → una tarjeta por usuario con la lista app→rol apilada.
+   El JS renderiza ambas; el media query muestra solo la que corresponde.
+   =========================================================================== */
+
+/* Identidad compartida (avatar + nombre + email), igual en tabla y tarjetas. */
+.ucell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.av { width: 30px; height: 30px; border-radius: 50%; background: var(--card); color: var(--muted-2); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.uinfo { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.uinfo b { font-weight: 600; }
+.email { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+
+/* <select> de rol canónico (sin chips minúsculos). Marca el acento si hay rol. */
+select.role { width: 100%; min-width: 110px; max-width: 168px; padding: 7px 30px 7px 11px; font-size: 13px; }
+select.role[data-has] { border-color: var(--accent); color: var(--text); }
+select.role:not([data-has]) { color: var(--muted); }
+
+/* Badge de 2FA sobrio (sin emoji): candado-check si activo, "2FA —" si no. */
+.tfa-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
+  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+.tfa-badge.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.tfa-badge.off { color: var(--muted); }
+.tfa-badge .dash { color: var(--muted); }
+.tfa-badge svg { flex: 0 0 auto; }
+
+/* Menú "…" de acciones por fila (agrupa Reset pass / Habilitar-Deshabilitar / Reset 2FA). */
+.rowmenu { position: relative; display: inline-flex; }
+.rowmenu-btn { width: 32px; height: 32px; }
+.rowmenu-pop { left: auto; right: 0; top: calc(100% + 4px); min-width: 190px; }
+.rowmenu-pop .menu-item { justify-content: flex-start; font-size: 13px; }
+
+/* Tabla (ancho): scroll-x solo si hace falta; 1.ª columna sticky. */
 .tablewrap { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: auto; box-shadow: var(--shadow); }
-table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
-.matrix th, .matrix td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
-.matrix thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+table.matrix { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.matrix th, .matrix td { padding: 11px 12px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; vertical-align: middle; }
+.matrix thead th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; background: var(--panel); z-index: 2; }
 .matrix th.u, .matrix td.u { text-align: left; }
 .matrix tbody tr:last-child td { border-bottom: none; }
-.ucell { display: flex; align-items: center; gap: 10px; }
-.av { width: 28px; height: 28px; border-radius: 50%; background: var(--card); color: var(--muted-2); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
-.uinfo { display: flex; flex-direction: column; line-height: 1.25; }
-.uinfo b { font-weight: 600; }
-.email { color: var(--muted); font-size: 11px; }
-.tfa .ok { color: var(--ok); } .tfa .no { color: var(--muted); }
-select.role { padding: 5px 6px; font-size: 12px; max-width: 124px; border-radius: 7px; }
-select.role[data-has] { border-color: var(--accent); }
-.acc { text-align: right; white-space: nowrap; }
-.acc button.mini { margin-left: 4px; }
+/* 1.ª columna "Usuario" STICKY (no se pierde al scrollear horizontalmente). */
+.matrix th.u, .matrix td.u { position: sticky; left: 0; z-index: 1; background: var(--panel);
+  box-shadow: 1px 0 0 var(--border); min-width: 210px; }
+.matrix thead th.u { z-index: 3; }
+.matrix tbody tr:hover td { background: var(--card-2); }
+.matrix tbody tr:hover td.u { background: var(--card); }
+.matrix td.acc { text-align: right; }
 tr.off { opacity: .55; }
+
+/* Tarjetas (angosto): ocultas por defecto, las activa el media query. */
+.cards { display: none; flex-direction: column; gap: 12px; }
+.ucard { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.ucard.off { opacity: .6; }
+.ucard-head { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+.ucard-head .ucell { flex: 1 1 auto; }
+.ucard-meta { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.ucard-roles { display: flex; flex-direction: column; }
+.rolerow { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--card); }
+.rolerow:first-child { border-top: 0; }
+.rolerow-app { flex: 1 1 auto; font-weight: 500; color: var(--muted-2); }
+.rolerow select.role { flex: 0 0 auto; max-width: 60%; }
+
+.matrix-empty { padding: 28px 16px; text-align: center; color: var(--muted); font-size: 13px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+
+/* Punto de quiebre: por debajo, colapsa a tarjetas. */
+@media (max-width: 720px) {
+  .tablewrap { display: none; }
+  .cards { display: flex; }
+  .matrix-head { align-items: flex-start; }
+}
 
 /* ---- Cards centradas (login lo da el canónico; estas son las pantallas
    internas: 2FA, contraseña, mensaje) ------------------------------------- */

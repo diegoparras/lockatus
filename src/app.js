@@ -58,6 +58,15 @@ function closeMenu() {
   const b = document.getElementById("btn-menu");
   if (b) b.setAttribute("aria-expanded", "false");
 }
+// Cierra los menús "…" por fila de la matriz (excepto, opcionalmente, uno).
+function closeRowMenus(except) {
+  document.querySelectorAll(".rowmenu-pop").forEach((p) => {
+    if (p === except) return;
+    p.classList.add("hidden");
+    const b = p.parentElement.querySelector(".rowmenu-btn");
+    if (b) b.setAttribute("aria-expanded", "false");
+  });
+}
 function openMenu() {
   show(hdrMenu);
   const b = document.getElementById("btn-menu");
@@ -80,12 +89,14 @@ function openAcerca() {
     hdrMenu.classList.contains("hidden") ? openMenu() : closeMenu();
   });
   document.addEventListener("click", (e) => {
+    if (!e.target.closest(".rowmenu")) closeRowMenus(null);
     if (!hdrMenu || hdrMenu.classList.contains("hidden")) return;
     if (!e.target.closest("#hdr-menu-wrap")) closeMenu();
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     closeMenu();
+    closeRowMenus(null);
     hide(acercaModal);
   });
   const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
@@ -161,20 +172,58 @@ async function viewMatrix() {
   if (ui && me.ok) ui.textContent = `${me.data.user.email} · Admin`;
   chrome(true);
 
-  const head = `<th class="u">Usuario</th><th>2FA</th>${apps.map((a) => `<th>${esc(a.name)}</th>`).join("")}<th></th>`;
-  const cell = (u, a) => {
+  // Icono de 2FA (sobrio, sin emoji): candado-check para activo, guion para inactivo.
+  const TFA_ON_SVG = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8.5" width="12" height="8" rx="1.5"/><path d="M6.5 8.5V6a3.5 3.5 0 0 1 7 0v2.5"/><path d="M8.2 12.4l1.4 1.4 2.4-2.6"/></svg>`;
+  const tfaBadge = (u) => u.totp
+    ? `<span class="tfa-badge on" title="2FA activo">${TFA_ON_SVG}<span>2FA</span></span>`
+    : `<span class="tfa-badge off" title="Sin 2FA">2FA <span class="dash">—</span></span>`;
+
+  // <select> de rol canónico, reutilizado por la tabla y por las tarjetas.
+  const roleSelect = (u, a) => {
     const cur = u.roles[a.slug] || "";
-    const opts = `<option value="">—</option>` + a.roles.map((ro) => `<option value="${esc(ro)}" ${ro === cur ? "selected" : ""}>${esc(ro)}</option>`).join("");
-    return `<td><select class="role" data-uid="${u.id}" data-app="${esc(a.slug)}" ${cur ? 'data-has="1"' : ""}>${opts}</select></td>`;
+    const opts = `<option value="">— Sin acceso</option>` + a.roles.map((ro) => `<option value="${esc(ro)}" ${ro === cur ? "selected" : ""}>${esc(ro)}</option>`).join("");
+    return `<select class="role" data-uid="${u.id}" data-app="${esc(a.slug)}" aria-label="Rol en ${esc(a.name)}" ${cur ? 'data-has="1"' : ""}>${opts}</select>`;
   };
-  const row = (u) => `
+
+  // Menú "…" por fila con las acciones (Reset pass / Habilitar-Deshabilitar / Reset 2FA).
+  const rowMenu = (u) => `
+    <div class="rowmenu">
+      <button class="icon-btn rowmenu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Acciones del usuario" title="Acciones">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="16" cy="10" r="1.6"/></svg>
+      </button>
+      <div class="rowmenu-pop menu hidden">
+        <button class="menu-item" type="button" data-act="resetpw" data-uid="${u.id}">Reset contraseña</button>
+        <button class="menu-item" type="button" data-act="status" data-uid="${u.id}" data-status="${u.status}">${u.status === "active" ? "Deshabilitar usuario" : "Habilitar usuario"}</button>
+        ${u.totp ? `<button class="menu-item" type="button" data-act="reset" data-uid="${u.id}">Reset 2FA</button>` : ""}
+      </div>
+    </div>`;
+
+  const userCell = (u) => `<div class="ucell"><span class="av">${esc(initials(u.name || u.email))}</span>
+    <span class="uinfo"><b>${esc(u.name || u.email.split("@")[0])}</b><span class="email">${esc(u.email)}${u.status !== "active" ? " · deshabilitado" : ""}</span></span></div>`;
+
+  // ---- Tabla (pantallas anchas): 1.ª columna Usuario sticky + scroll-x suave si hace falta ----
+  const head = `<th class="u">Usuario</th><th class="c-tfa">2FA</th>${apps.map((a) => `<th>${esc(a.name)}</th>`).join("")}<th class="c-acc" aria-label="Acciones"></th>`;
+  const tRow = (u) => `
     <tr class="${u.status !== "active" ? "off" : ""}">
-      <td class="u"><div class="ucell"><span class="av">${esc(initials(u.name || u.email))}</span>
-        <span class="uinfo"><b>${esc(u.name || u.email.split("@")[0])}</b><span class="email">${esc(u.email)}${u.status !== "active" ? " · deshabilitado" : ""}</span></span></div></td>
-      <td class="tfa">${u.totp ? '<span class="ok" title="2FA activo">●</span>' : '<span class="no">—</span>'}</td>
-      ${apps.map((a) => cell(u, a)).join("")}
-      <td class="acc"><button class="mini ghost" data-act="resetpw" data-uid="${u.id}">Reset pass</button><button class="mini ghost" data-act="status" data-uid="${u.id}" data-status="${u.status}">${u.status === "active" ? "Deshabilitar" : "Habilitar"}</button>${u.totp ? `<button class="mini ghost" data-act="reset" data-uid="${u.id}">Reset 2FA</button>` : ""}</td>
+      <td class="u">${userCell(u)}</td>
+      <td class="tfa c-tfa">${tfaBadge(u)}</td>
+      ${apps.map((a) => `<td>${roleSelect(u, a)}</td>`).join("")}
+      <td class="acc c-acc">${rowMenu(u)}</td>
     </tr>`;
+
+  // ---- Tarjetas (pantallas angostas): una card por usuario, app→rol apilada ----
+  const card = (u) => `
+    <article class="ucard ${u.status !== "active" ? "off" : ""}">
+      <header class="ucard-head">
+        ${userCell(u)}
+        <div class="ucard-meta">${tfaBadge(u)}${rowMenu(u)}</div>
+      </header>
+      <div class="ucard-roles">
+        ${apps.map((a) => `<div class="rolerow"><span class="rolerow-app">${esc(a.name)}</span>${roleSelect(u, a)}</div>`).join("")}
+      </div>
+    </article>`;
+
+  const empty = !users.length ? `<div class="matrix-empty">Todavía no hay usuarios. Creá el primero con “+ Usuario”.</div>` : "";
 
   app.innerHTML = `
     <div class="panel">
@@ -194,7 +243,9 @@ async function viewMatrix() {
         <input id="na-redirect" placeholder="redirect_uri (opcional, ej. https://miapp/callback)" />
         <button type="submit">Agregar app</button>
       </form>
-      <div class="tablewrap"><table class="matrix"><thead><tr>${head}</tr></thead><tbody>${users.map(row).join("")}</tbody></table></div>
+      ${empty}
+      <div class="tablewrap"><table class="matrix"><thead><tr>${head}</tr></thead><tbody>${users.map(tRow).join("")}</tbody></table></div>
+      <div class="cards">${users.map(card).join("")}</div>
     </div>`;
 
   document.getElementById("nuevo").onclick = () => { const f = document.getElementById("newuser"); f.style.display = f.style.display === "none" ? "flex" : "none"; };
@@ -224,10 +275,26 @@ async function viewMatrix() {
   app.querySelectorAll("select.role").forEach((sel) => sel.addEventListener("change", async () => {
     const r3 = await api("PUT", `/api/admin/users/${sel.dataset.uid}/role`, { app: sel.dataset.app, role: sel.value });
     if (!r3.ok) { toast(r3.data.error || "No se pudo guardar", true); return; }
+    // Mantener en sincronía la otra copia del select (tabla ↔ tarjeta) del mismo usuario·app.
+    app.querySelectorAll(`select.role[data-uid="${sel.dataset.uid}"][data-app="${sel.dataset.app}"]`).forEach((tw) => {
+      if (tw !== sel) tw.value = sel.value;
+      sel.value ? tw.setAttribute("data-has", "1") : tw.removeAttribute("data-has");
+    });
     toast(sel.value ? `Rol asignado: ${sel.value}` : "Acceso revocado");
   }));
 
+  // Menús "…" por fila (uno por copia tabla/tarjeta). Abren/cierran como el kebab del topbar.
+  app.querySelectorAll(".rowmenu-btn").forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const pop = btn.parentElement.querySelector(".rowmenu-pop");
+    const willOpen = pop.classList.contains("hidden");
+    closeRowMenus(willOpen ? pop : null);
+    pop.classList.toggle("hidden", !willOpen);
+    btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+  }));
+
   app.querySelectorAll("button[data-act]").forEach((btn) => btn.onclick = async () => {
+    closeRowMenus(null);
     const uid = btn.dataset.uid, act = btn.dataset.act;
     if (act === "status") {
       const next = btn.dataset.status === "active" ? "disabled" : "active";
