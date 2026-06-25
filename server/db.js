@@ -4,7 +4,7 @@
 import pg from "pg";
 import { randomBytes } from "node:crypto";
 import { config } from "./config.js";
-import { hashPassword, sha256 } from "./crypto.js";
+import { hashPassword, sha256, randomToken } from "./crypto.js";
 
 const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
 const q = (text, params) => pool.query(text, params);
@@ -50,6 +50,20 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS audit_security (
       id SERIAL PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), org_id INTEGER,
       actor TEXT, event TEXT, target TEXT, ip TEXT);
+    -- Tokens de alta/reset de contraseña: el LINK lleva el token EN CLARO; acá solo guardamos su
+    -- HASH (sha256). Un solo uso (used_at) y con expiración (expires_at). Reemplaza a la contraseña
+    -- temporal: el admin manda el link, el usuario pone SU propia clave (el admin nunca la ve).
+    CREATE TABLE IF NOT EXISTS password_setup_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,                 -- 'alta' | 'reset'
+      token_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_by TEXT,
+      creado TIMESTAMPTZ DEFAULT now());
+    CREATE INDEX IF NOT EXISTS idx_setup_token_hash ON password_setup_tokens(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_setup_token_user ON password_setup_tokens(user_id);
     CREATE TABLE IF NOT EXISTS audit_activity (
       id SERIAL PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), org_id INTEGER,
       user_email TEXT, app_slug TEXT, action TEXT, detail JSONB DEFAULT '{}');
@@ -172,6 +186,34 @@ export const getRefreshToken = async (token) =>
   (await q("SELECT user_id, app_slug FROM refresh_tokens WHERE token_hash=$1 AND revoked=false AND expires > now()", [sha256(token)])).rows[0] || null;
 // Al cambiar/resetear la contraseña: matar todos los refresh tokens del usuario (lo saca de todas las apps).
 export const revokeAllRefresh = async (userId) => void (await q("UPDATE refresh_tokens SET revoked=true WHERE user_id=$1", [userId]));
+
+// ---- tokens de alta/reset de contraseña (link de un solo uso, hash en reposo) ----
+// Genera un token nuevo: el VALOR EN CLARO solo se devuelve acá (va en el link), en la DB queda
+// únicamente el sha256. TTL según el tipo ('alta' 72h, 'reset' 1h). Invalida tokens previos del
+// mismo usuario+tipo aún sin usar (un solo link vivo a la vez por flujo).
+export async function createSetupToken(userId, kind, createdBy = "") {
+  const k = kind === "reset" ? "reset" : "alta";
+  const ttlMs = k === "reset" ? config.setupTokenResetTtlMs : config.setupTokenAltaTtlMs;
+  const token = randomToken(32); // ≥32 bytes aleatorios, base64url
+  await q("UPDATE password_setup_tokens SET used_at=now() WHERE user_id=$1 AND kind=$2 AND used_at IS NULL", [userId, k]);
+  await q(`INSERT INTO password_setup_tokens(user_id, kind, token_hash, expires_at, created_by)
+           VALUES($1,$2,$3, now() + ($4 || ' milliseconds')::interval, $5)`,
+    [userId, k, sha256(token), String(ttlMs), createdBy]);
+  const link = `${config.appUrl}/set-password?token=${token}`;
+  return { token, link, kind: k };
+}
+// Consume un token: lo busca POR HASH, valida que no esté usado ni vencido, lo marca usado de forma
+// ATÓMICA (un solo uso aunque haya carrera) y devuelve {userId, kind}. Null si no vale (genérico:
+// quien llama da un error sin revelar si el usuario existe → anti-enumeración).
+export async function consumeSetupToken(token) {
+  if (!token || typeof token !== "string") return null;
+  const r = await q(
+    `UPDATE password_setup_tokens SET used_at=now()
+       WHERE token_hash=$1 AND used_at IS NULL AND expires_at > now()
+       RETURNING user_id, kind`, [sha256(token)]);
+  const row = r.rows[0];
+  return row ? { userId: row.user_id, kind: row.kind } : null;
+}
 
 // ---- auditoría de seguridad (siempre on) ----
 export const auditSec = async (actor, event, target = "", org = 1, ip = "") =>

@@ -3,10 +3,11 @@
 import { getJwks } from "./keys.js";
 import { config } from "./config.js";
 import { signSession, verifySession } from "./tokens.js";
-import { verifyPassword, decryptSecret, encryptSecret, randomToken, sha256, genRecoveryCodes } from "./crypto.js";
+import { verifyPassword, decryptSecret, encryptSecret, sha256, genRecoveryCodes } from "./crypto.js";
 import { verifyTotp, newSecret, otpauthUrl, qrDataUrl } from "./totp.js";
 import * as db from "./db.js";
 import * as oidc from "./oidc.js";
+import { sendSetupLink, smtpConfigured } from "./mailer.js";
 
 function send(res, code, obj, cookie) {
   const h = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
@@ -47,6 +48,33 @@ async function requireAdmin(req, res) {
 // Lockout simple anti-fuerza-bruta, por email, en memoria.
 const fails = new Map();
 const MAX_FAILS = 5;
+
+// IP del cliente: respeta X-Forwarded-For (reverse proxy / TLS) y cae al socket si no hay.
+const clientIp = (req) =>
+  (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+  req.socket?.remoteAddress || "";
+
+// Rate-limit en memoria del POST público de set-password, por IP. Ventana móvil simple:
+// MAX_SETPW intentos por IP cada SETPW_WINDOW ms. Frena fuerza bruta sobre tokens.
+const setpwHits = new Map();
+const MAX_SETPW = 20, SETPW_WINDOW = 10 * 60 * 1000; // 20 intentos / 10 min por IP
+function setpwRateLimited(ip) {
+  const now = Date.now();
+  const h = setpwHits.get(ip);
+  if (!h || now - h.t > SETPW_WINDOW) { setpwHits.set(ip, { n: 1, t: now }); return false; }
+  h.n += 1;
+  return h.n > MAX_SETPW;
+}
+
+// Emite el link de alta/reset e intenta mandarlo por email (si hay SMTP). Devuelve {link, emailed}.
+// El email NUNCA falla el flujo: si no hay SMTP o el envío revienta, emailed=false y el admin copia
+// el link de la respuesta. No se loguea el token ni el link.
+async function issueSetupLink(userId, email, kind, createdBy) {
+  const { link } = await db.createSetupToken(userId, kind, createdBy);
+  let emailed = false;
+  try { emailed = await sendSetupLink(email, link, kind); } catch { emailed = false; }
+  return { link, emailed };
+}
 
 export async function handle(req, res, path, dbOk) {
   const m = req.method;
@@ -103,6 +131,33 @@ export async function handle(req, res, path, dbOk) {
 
   if (path === "/api/logout" && m === "POST")
     return send(res, 200, { ok: true }, `${config.cookieName}=; Path=/; HttpOnly; Max-Age=0`);
+
+  // ---- set-password PÚBLICO (canje del link de alta/reset): el usuario define SU contraseña ----
+  // Sin sesión: el portador del token (de un solo uso) es la autorización. Rate-limit por IP.
+  // Errores GENÉRICOS ("link inválido o vencido") → no revela si el usuario existe (anti-enum).
+  if (path === "/api/set-password" && m === "POST") {
+    const ip = clientIp(req);
+    if (setpwRateLimited(ip)) return send(res, 429, { error: "Demasiados intentos, esperá un rato" });
+    const b = await readBody(req);
+    if (!b) return send(res, 400, { error: "JSON inválido" });
+    const password = String(b.password || "");
+    if (password.length < 8) return send(res, 400, { error: "La contraseña debe tener al menos 8 caracteres" });
+    // Consume atómico (one-time + expiry). Null → genérico, sin distinguir inexistente/usado/vencido.
+    const consumed = await db.consumeSetupToken(String(b.token || ""));
+    if (!consumed) return send(res, 400, { error: "Link inválido o vencido" });
+    const u = await db.getUserById(consumed.userId);
+    if (!u) return send(res, 400, { error: "Link inválido o vencido" }); // mismo error genérico
+    await db.setPasswordFactor(u.id, password);
+    await db.setMustChange(u.id, false);   // ya definió su clave: no hay que forzar otro cambio
+    await db.revokeAllRefresh(u.id);        // echa sesiones viejas en todas las apps
+    await db.auditSec(u.email, consumed.kind === "reset" ? "set_password_reset" : "set_password_alta", "", u.org_id, ip);
+    // El usuario acaba de probar el token de un solo uso Y definir su clave: le damos sesión del hub
+    // para encadenar el paso OPCIONAL de 2FA (que usa /api/2fa/setup, con sesión). Solo si está activo.
+    const cookie = u.status === "active"
+      ? setCookie(signSession({ uid: u.id, email: u.email, exp: Date.now() + config.sessionTtlMs }), config.sessionTtlMs / 1000)
+      : undefined;
+    return send(res, 200, { ok: true }, cookie);
+  }
 
   if (path === "/api/me" && m === "GET") {
     const s = getSession(req);
@@ -180,11 +235,13 @@ export async function handle(req, res, path, dbOk) {
       const email = String(b.email || "").trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return send(res, 400, { error: "correo inválido" });
       if (await db.getUserByEmail(email)) return send(res, 409, { error: "ya existe un usuario con ese correo" });
-      const tempPass = randomToken(9);
-      const id = await db.createUserWithPassword({ email, name: String(b.name || "") }, tempPass);
-      await db.setMustChange(id, true); // la temporal hay que cambiarla al primer ingreso
-      await db.auditSec(actor, "crear_usuario", email);
-      return send(res, 201, { ok: true, id, tempPass });
+      // Alta SIN contraseña: el usuario la define con el LINK de un solo uso (el admin no la ve).
+      // Hasta que la setee, no puede entrar (must_change=true y no hay factor 'password' usable).
+      const id = await db.createUser({ email, name: String(b.name || "") });
+      await db.setMustChange(id, true);
+      const { link, emailed } = await issueSetupLink(id, email, "alta", actor);
+      await db.auditSec(actor, "crear_usuario", email, 1, clientIp(req));
+      return send(res, 201, { ok: true, id, link, emailed });
     }
 
     // Alta/edición de una app de la familia Escriba: onboarding de apps NUEVAS sin tocar el
@@ -246,15 +303,13 @@ export async function handle(req, res, path, dbOk) {
         return send(res, 200, { ok: true });
       }
 
-      // Reset de contraseña por admin: temporal de un solo uso + obliga a cambiarla al ingresar.
-      // NO toca el 2FA (el reset no es un bypass del segundo factor) y mata los refresh tokens.
+      // Reset de contraseña por admin: emite un LINK de un solo uso (el admin no ve la clave nueva).
+      // NO toca el 2FA (el reset no es un bypass del segundo factor). La contraseña vieja sigue
+      // válida hasta que el usuario abra el link y ponga una nueva (ahí se revocan las sesiones).
       if (seg[4] === "reset-password" && m === "POST") {
-        const tempPass = randomToken(9);
-        await db.setPasswordFactor(id, tempPass);
-        await db.setMustChange(id, true);
-        await db.revokeAllRefresh(id);
-        await db.auditSec(actor, "reset_password", target.email);
-        return send(res, 200, { ok: true, tempPass });
+        const { link, emailed } = await issueSetupLink(id, target.email, "reset", actor);
+        await db.auditSec(actor, "reset_password", target.email, 1, clientIp(req));
+        return send(res, 200, { ok: true, link, emailed });
       }
     }
     return send(res, 404, { error: "ruta admin no encontrada" });

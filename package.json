@@ -8,13 +8,14 @@
     "start": "node server/index.js",
     "serve": "node server/index.js",
     "test": "node test/core-check.mjs",
-    "test:integ": "node test/twofa-check.mjs && node test/oidc-check.mjs && node test/recovery-check.mjs",
+    "test:integ": "node test/twofa-check.mjs && node test/oidc-check.mjs && node test/recovery-check.mjs && node test/setup-link-check.mjs",
     "demo": "node examples/demo-app/server.mjs"
   },
   "dependencies": {
-    "pg": "^8.13.0",
     "jose": "^5.9.6",
+    "nodemailer": "^9.0.1",
     "otplib": "^12.0.1",
+    "pg": "^8.13.0",
     "qrcode": "^1.5.4"
   }
 }

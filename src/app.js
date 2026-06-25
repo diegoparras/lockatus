@@ -17,6 +17,38 @@ function toast(msg, bad) {
   setTimeout(() => t.remove(), 2600);
 }
 
+// Modal que muestra el LINK de alta/reset con botón copiar (y, si se mandó por email, el aviso).
+// Reemplaza la vieja muestra de la contraseña temporal: el admin nunca ve la clave.
+function showLinkDialog(title, link, emailed, email) {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  const mailed = emailed ? `<p class="link-mailed">Enviado por email a ${esc(email)}.</p>` : "";
+  back.innerHTML = `
+    <div class="modal-card">
+      <button class="modal-x" type="button" aria-label="Cerrar">&#10005;</button>
+      <h3 class="modal-tit">${esc(title)}</h3>
+      <div class="modal-cuerpo">
+        <p>Compartí este enlace de un solo uso con la persona. Abriéndolo define su propia contraseña. Vence pronto.</p>
+        ${mailed}
+        <div class="link-row">
+          <input class="link-input" type="text" readonly value="${esc(link)}" aria-label="Enlace de alta/reset" />
+          <button class="link-copy" type="button">Copiar</button>
+        </div>
+      </div>
+    </div>`;
+  const close = () => back.remove();
+  back.querySelector(".modal-x").onclick = close;
+  back.addEventListener("click", (e) => { if (e.target === back) close(); });
+  const input = back.querySelector(".link-input");
+  back.querySelector(".link-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(link); }
+    catch { input.focus(); input.select(); document.execCommand?.("copy"); }
+    toast("Enlace copiado");
+  };
+  document.body.appendChild(back);
+  input.focus(); input.select();
+}
+
 // ---------- ojito mostrar/ocultar contraseña (login + cambio de clave) ----------
 const EYE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const EYE_OFF_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68M6.6 6.6A13.4 13.4 0 0 0 2 11s3.6 7 10 7a9.1 9.1 0 0 0 5.4-1.6"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
@@ -114,6 +146,8 @@ function openAcerca() {
 function chrome(on) { on ? show(topbar) : (hide(topbar), closeMenu()); }
 
 async function boot() {
+  // Ruta pública del link de alta/reset: define tu contraseña (sin sesión previa).
+  if (location.pathname === "/set-password") return viewSetPassword();
   const me = await api("GET", "/api/me");
   if (me.ok && me.data.must_change) return viewPassword(true);
   if (me.ok && me.data.admin) return viewMatrix();
@@ -251,9 +285,10 @@ async function viewMatrix() {
   document.getElementById("nuevo").onclick = () => { const f = document.getElementById("newuser"); f.style.display = f.style.display === "none" ? "flex" : "none"; };
   document.getElementById("newuser").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const r2 = await api("POST", "/api/admin/users", { email: document.getElementById("nu-email").value, name: document.getElementById("nu-name").value });
+    const email = document.getElementById("nu-email").value.trim();
+    const r2 = await api("POST", "/api/admin/users", { email, name: document.getElementById("nu-name").value });
     if (!r2.ok) return toast(r2.data.error || "No se pudo crear", true);
-    toast(`Usuario creado · contraseña temporal: ${r2.data.tempPass}`);
+    showLinkDialog("Usuario creado", r2.data.link, r2.data.emailed, email);
     viewMatrix();
   });
 
@@ -303,7 +338,8 @@ async function viewMatrix() {
     } else if (act === "resetpw") {
       const r6 = await api("POST", `/api/admin/users/${uid}/reset-password`);
       if (!r6.ok) return toast(r6.data.error || "Error", true);
-      toast(`Contraseña reseteada · temporal: ${r6.data.tempPass}`);
+      const email = (users.find((x) => String(x.id) === String(uid)) || {}).email || "";
+      showLinkDialog("Restablecer contraseña", r6.data.link, r6.data.emailed, email);
       return;
     } else {
       const r5 = await api("POST", `/api/admin/users/${uid}/reset-2fa`);
@@ -354,6 +390,90 @@ async function view2fa() {
       <button id="done">Listo</button></div></div></main>`;
     document.getElementById("done").onclick = boot;
   };
+}
+
+// ---------- set-password PÚBLICO (canje del link de alta/reset) ----------
+// El usuario llega por el link del email (?token=...). Define SU contraseña; tras eso se le ofrece
+// (opcional) enrolar 2FA reusando los endpoints existentes /api/2fa/setup + /api/2fa/confirm.
+async function viewSetPassword() {
+  chrome(false);
+  const token = new URLSearchParams(location.search).get("token") || "";
+  if (!token) return viewMessage("Link inválido o vencido. Pedí uno nuevo a tu administrador.");
+
+  app.innerHTML = `
+    <div class="login-overlay">
+      <form class="login-card" id="setpw" autocomplete="on">
+        <span class="logo" style="background:center/contain no-repeat url('/logo.svg')"></span>
+        <h2>Definí tu contraseña</h2>
+        <p class="login-sub">Elegí una contraseña para tu cuenta de la Suite Escriba.</p>
+        <input id="sp-pw" type="password" placeholder="Nueva contraseña (mín. 8)" autocomplete="new-password" required />
+        <input id="sp-pw2" type="password" placeholder="Repetir contraseña" autocomplete="new-password" required />
+        <button type="submit">Guardar contraseña</button>
+        <p class="login-err" id="sp-msg"></p>
+      </form>
+    </div>`;
+  eyeify(app);
+  const msg = document.getElementById("sp-msg");
+  document.getElementById("setpw").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pw = document.getElementById("sp-pw").value, pw2 = document.getElementById("sp-pw2").value;
+    if (pw.length < 8) { msg.textContent = "La contraseña debe tener al menos 8 caracteres."; return; }
+    if (pw !== pw2) { msg.textContent = "Las contraseñas no coinciden."; return; }
+    const r = await api("POST", "/api/set-password", { token, password: pw });
+    if (!r.ok) { msg.textContent = r.data.error || "No se pudo guardar"; return; }
+    // Limpiar el token de la URL (que no quede en el historial) y ofrecer 2FA.
+    try { history.replaceState(null, "", "/set-password"); } catch { /* */ }
+    setPasswordOffer2fa();
+  });
+}
+
+// Paso OPCIONAL de 2FA tras definir la contraseña (con la sesión recién creada por /api/set-password).
+async function setPasswordOffer2fa() {
+  const s = await api("POST", "/api/2fa/setup");
+  const goLogin = () => { location.href = "/"; };
+  if (!s.ok) return setPasswordDone(); // sin sesión o 2FA ya activo: cerrar el flujo igual
+  app.innerHTML = `
+    <div class="login-overlay">
+      <div class="login-card">
+        <span class="logo" style="background:center/contain no-repeat url('/logo.svg')"></span>
+        <h2>Activá 2FA (opcional)</h2>
+        <p class="login-sub">Sumá un segundo factor: escaneá el QR con tu app de autenticación y confirmá con el código. Podés saltarlo.</p>
+        <img class="qr" src="${s.data.qr}" alt="QR de 2FA" />
+        <p class="mono">${esc(s.data.secret)}</p>
+        <input id="sp-code" inputmode="numeric" placeholder="Código de 6 dígitos" autocomplete="one-time-code" />
+        <div class="row2"><button id="sp-confirm">Activar 2FA</button><button id="sp-skip" class="ghost" type="button">Saltar</button></div>
+        <p class="login-err" id="sp-m2"></p>
+      </div>
+    </div>`;
+  document.getElementById("sp-skip").onclick = goLogin;
+  document.getElementById("sp-confirm").onclick = async () => {
+    const r = await api("POST", "/api/2fa/confirm", { code: document.getElementById("sp-code").value });
+    if (!r.ok) { document.getElementById("sp-m2").textContent = r.data.error || "Código inválido"; return; }
+    app.innerHTML = `
+      <div class="login-overlay">
+        <div class="login-card">
+          <span class="logo" style="background:center/contain no-repeat url('/logo.svg')"></span>
+          <h2>2FA activado</h2>
+          <p class="login-sub">Guardá estos <b>códigos de recuperación</b> (se muestran una sola vez):</p>
+          <pre class="codes">${r.data.recovery.map(esc).join("\n")}</pre>
+          <button id="sp-done">Continuar</button>
+        </div>
+      </div>`;
+    document.getElementById("sp-done").onclick = goLogin;
+  };
+}
+
+function setPasswordDone() {
+  app.innerHTML = `
+    <div class="login-overlay">
+      <div class="login-card">
+        <span class="logo" style="background:center/contain no-repeat url('/logo.svg')"></span>
+        <h2>¡Listo!</h2>
+        <p class="login-sub">Tu contraseña quedó definida. Ya podés ingresar.</p>
+        <button id="sp-go">Ir a ingresar</button>
+      </div>
+    </div>`;
+  document.getElementById("sp-go").onclick = () => { location.href = "/"; };
 }
 
 // ---------- contraseña propia (cambio forzado o voluntario) ----------

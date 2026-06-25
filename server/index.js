@@ -28,7 +28,10 @@ const server = http.createServer(async (req, res) => {
     if (isApi(path)) return await handle(req, res, path, dbOk);
     const txt = { "Content-Type": "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff" };
     if (BLOQUEADO(path)) { res.writeHead(403, txt); return res.end("forbidden"); }
-    const rel = path.startsWith("/public/") ? path : "/src" + (path === "/" ? "/index.html" : path);
+    // Rutas del SPA que no son archivos: sirven el shell (index.html) y el front enruta.
+    // `/set-password` es PÚBLICA (antes del gate de sesión): el usuario llega por el link del email.
+    const spaRoute = path === "/" || path === "/set-password";
+    const rel = path.startsWith("/public/") ? path : "/src" + (spaRoute ? "/index.html" : path);
     const file = normalize(join(root, rel));
     if (!file.startsWith(root)) { res.writeHead(403, txt); return res.end("forbidden"); }
     let data = await readFile(file);
