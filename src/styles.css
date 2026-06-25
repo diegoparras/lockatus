@@ -14,7 +14,7 @@ input:focus { outline: none; border-color: var(--acc); }
 /* Ojito mostrar/ocultar contraseña */
 .pass-wrap { position: relative; display: flex; align-items: center; }
 .pass-wrap > input { flex: 1 1 auto; padding-right: 38px; }
-.pass-toggle { position: absolute; top: 0; bottom: 0; right: 5px; margin-block: auto;
+.pass-toggle { position: absolute; top: 0; bottom: 0; right: 5px; margin-block: auto; padding: 0;
   width: 30px; height: 30px; display: grid; place-items: center; background: none; border: 0;
   border-radius: 7px; color: var(--ink); opacity: .5; cursor: pointer; transition: opacity .15s, background .15s; }
 .pass-toggle:hover { opacity: 1; background: color-mix(in srgb, var(--ink) 8%, transparent); }
