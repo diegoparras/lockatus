@@ -40,6 +40,68 @@ function eyeify(root) {
   });
 }
 
+// ---------- chrome: topbar + menú kebab + modal "Acerca de" ----------
+const topbar = document.getElementById("topbar");
+const hdrMenu = document.getElementById("hdr-menu");
+const acercaModal = document.getElementById("acerca");
+const show = (el) => el && el.classList.remove("hidden");
+const hide = (el) => el && el.classList.add("hidden");
+
+function setTheme(dark) {
+  document.documentElement.dataset.theme = dark ? "dark" : "";
+  try { localStorage.setItem("lockatus.theme", dark ? "dark" : "light"); } catch { /* sin storage */ }
+}
+function toggleTheme() { setTheme(document.documentElement.dataset.theme !== "dark"); }
+
+function closeMenu() {
+  hide(hdrMenu);
+  const b = document.getElementById("btn-menu");
+  if (b) b.setAttribute("aria-expanded", "false");
+}
+function openMenu() {
+  show(hdrMenu);
+  const b = document.getElementById("btn-menu");
+  if (b) b.setAttribute("aria-expanded", "true");
+}
+
+function openAcerca() {
+  const meta = document.querySelector('meta[name="lockatus-version"]');
+  const v = (meta && meta.content || "").trim();
+  const dd = document.getElementById("about-version");
+  if (dd) dd.textContent = v && !v.startsWith("__") ? `v${v.replace(/^v/, "")}` : "—";
+  show(acercaModal);
+}
+
+// Wiring del chrome (una sola vez; los elementos son estáticos en index.html).
+(function wireChrome() {
+  const btnMenu = document.getElementById("btn-menu");
+  if (btnMenu) btnMenu.addEventListener("click", (e) => {
+    e.stopPropagation();
+    hdrMenu.classList.contains("hidden") ? openMenu() : closeMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (!hdrMenu || hdrMenu.classList.contains("hidden")) return;
+    if (!e.target.closest("#hdr-menu-wrap")) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    closeMenu();
+    hide(acercaModal);
+  });
+  const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
+  bind("brand-home", () => boot());
+  bind("btn-theme", () => { toggleTheme(); });
+  bind("btn-mi2fa", () => { closeMenu(); view2fa(); });
+  bind("btn-mipass", () => { closeMenu(); viewPassword(false); });
+  bind("btn-acerca", () => { closeMenu(); openAcerca(); });
+  bind("btn-logout", async () => { closeMenu(); await api("POST", "/api/logout"); boot(); });
+  bind("acerca-x", () => hide(acercaModal));
+  if (acercaModal) acercaModal.addEventListener("click", (e) => { if (e.target === acercaModal) hide(acercaModal); });
+})();
+
+// El topbar solo se ve en la vista logueada (la matriz). El resto de vistas lo ocultan.
+function chrome(on) { on ? show(topbar) : (hide(topbar), closeMenu()); }
+
 async function boot() {
   const me = await api("GET", "/api/me");
   if (me.ok && me.data.must_change) return viewPassword(true);
@@ -50,18 +112,20 @@ async function boot() {
 
 // ---------- login ----------
 function viewLogin() {
+  chrome(false);
   app.innerHTML = `
-    <main class="wrap"><div class="card">
-      <div class="brand"><span class="lock" aria-hidden="true"></span><h1>Lockatus</h1></div>
-      <p class="sub">Identidad única de la Suite Escriba</p>
-      <form id="login" autocomplete="on">
+    <div class="login-overlay">
+      <form class="login-card" id="login" autocomplete="on">
+        <span class="logo" style="background:center/contain no-repeat url('/logo.svg')"></span>
+        <h2>Lockatus</h2>
+        <p class="login-sub">Identidad única de la Suite Escriba</p>
         <input id="email" type="email" placeholder="Correo" autocomplete="username" required />
         <input id="pass" type="password" placeholder="Contraseña" autocomplete="current-password" required />
         <input id="totp" inputmode="numeric" placeholder="Código 2FA (6 dígitos)" autocomplete="one-time-code" style="display:none" />
         <button type="submit">Ingresar</button>
-        <p class="hint err" id="msg"></p>
+        <p class="login-err" id="msg"></p>
       </form>
-    </div></main>`;
+    </div>`;
   eyeify(app);
   const totpEl = document.getElementById("totp"), msg = document.getElementById("msg");
   document.getElementById("login").addEventListener("submit", async (e) => {
@@ -79,8 +143,9 @@ function viewLogin() {
 }
 
 function viewMessage(text) {
-  app.innerHTML = `<main class="wrap"><div class="card"><div class="brand"><span class="lock"></span><h1>Lockatus</h1></div>
-    <p class="sub">${esc(text)}</p><button id="out">Cerrar sesión</button></div></main>`;
+  chrome(false);
+  app.innerHTML = `<main class="wrap"><div class="card"><div class="col"><div class="brand"><span class="lock"></span><h1>Lockatus</h1></div>
+    <p class="sub">${esc(text)}</p><button id="out">Cerrar sesión</button></div></div></main>`;
   document.getElementById("out").onclick = async () => { await api("POST", "/api/logout"); boot(); };
 }
 
@@ -89,6 +154,12 @@ async function viewMatrix() {
   const r = await api("GET", "/api/admin/matrix");
   if (!r.ok) return viewLogin();
   const { apps, users } = r.data;
+
+  // Identidad en el menú del topbar (quién está logueado).
+  const me = await api("GET", "/api/me");
+  const ui = document.getElementById("user-info");
+  if (ui && me.ok) ui.textContent = `${me.data.user.email} · Admin`;
+  chrome(true);
 
   const head = `<th class="u">Usuario</th><th>2FA</th>${apps.map((a) => `<th>${esc(a.name)}</th>`).join("")}<th></th>`;
   const cell = (u, a) => {
@@ -102,14 +173,14 @@ async function viewMatrix() {
         <span class="uinfo"><b>${esc(u.name || u.email.split("@")[0])}</b><span class="email">${esc(u.email)}${u.status !== "active" ? " · deshabilitado" : ""}</span></span></div></td>
       <td class="tfa">${u.totp ? '<span class="ok" title="2FA activo">●</span>' : '<span class="no">—</span>'}</td>
       ${apps.map((a) => cell(u, a)).join("")}
-      <td class="acc"><button class="mini" data-act="resetpw" data-uid="${u.id}">Reset pass</button><button class="mini" data-act="status" data-uid="${u.id}" data-status="${u.status}">${u.status === "active" ? "Deshabilitar" : "Habilitar"}</button>${u.totp ? `<button class="mini" data-act="reset" data-uid="${u.id}">Reset 2FA</button>` : ""}</td>
+      <td class="acc"><button class="mini ghost" data-act="resetpw" data-uid="${u.id}">Reset pass</button><button class="mini ghost" data-act="status" data-uid="${u.id}" data-status="${u.status}">${u.status === "active" ? "Deshabilitar" : "Habilitar"}</button>${u.totp ? `<button class="mini ghost" data-act="reset" data-uid="${u.id}">Reset 2FA</button>` : ""}</td>
     </tr>`;
 
   app.innerHTML = `
     <div class="panel">
-      <div class="topbar">
+      <div class="matrix-head">
         <div><div class="crumb">Lockatus · Admin</div><h2>Accesos</h2></div>
-        <div class="actions"><button id="nuevo">+ Usuario</button><button id="nuevoapp" class="ghost">+ App</button><button id="mi2fa" class="ghost">Mi 2FA</button><button id="mipass" class="ghost">Mi contraseña</button><button id="logout" class="ghost">Salir</button></div>
+        <div class="actions"><button id="nuevo">+ Usuario</button><button id="nuevoapp" class="ghost">+ App</button></div>
       </div>
       <form id="newuser" class="newuser" style="display:none">
         <input id="nu-email" type="email" placeholder="correo@org.com" required />
@@ -126,9 +197,6 @@ async function viewMatrix() {
       <div class="tablewrap"><table class="matrix"><thead><tr>${head}</tr></thead><tbody>${users.map(row).join("")}</tbody></table></div>
     </div>`;
 
-  document.getElementById("logout").onclick = async () => { await api("POST", "/api/logout"); boot(); };
-  document.getElementById("mi2fa").onclick = () => view2fa();
-  document.getElementById("mipass").onclick = () => viewPassword(false);
   document.getElementById("nuevo").onclick = () => { const f = document.getElementById("newuser"); f.style.display = f.style.display === "none" ? "flex" : "none"; };
   document.getElementById("newuser").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -181,6 +249,7 @@ async function viewMatrix() {
 
 // ---------- 2FA del propio usuario ----------
 async function view2fa() {
+  chrome(false);
   const me = await api("GET", "/api/me");
   if (me.data?.totp) {
     app.innerHTML = `<main class="wrap"><div class="card"><div class="col">
@@ -222,6 +291,7 @@ async function view2fa() {
 
 // ---------- contraseña propia (cambio forzado o voluntario) ----------
 function viewPassword(forced) {
+  chrome(false);
   app.innerHTML = `<main class="wrap"><div class="card"><div class="col">
     <div class="brand"><span class="lock"></span><h1>${forced ? "Cambiá tu contraseña" : "Mi contraseña"}</h1></div>
     <p class="sub">${forced ? "Tu contraseña es temporal. Definí una nueva para continuar." : "Cambiarla cierra tus sesiones en todas las apps."}</p>

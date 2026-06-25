@@ -195,6 +195,19 @@ export async function seedAdmin() {
     if (config.adminPass) await setPasswordFactor(existing.id, config.adminPass); // reset → nunca quedás afuera
     return null;
   }
+  // Cambiaron LOCKATUS_ADMIN_EMAIL después del primer arranque: renombramos el admin DEFAULT de
+  // fábrica (admin@lockatus.local) al email configurado, en vez de crear un admin duplicado.
+  // Seguro: solo toca ese default y solo cuando el email nuevo está libre (estamos en este branch).
+  const DEFAULT_ADMIN = "admin@lockatus.local";
+  if (config.adminEmail !== DEFAULT_ADMIN) {
+    const legacy = await getUserByEmail(DEFAULT_ADMIN);
+    if (legacy) {
+      await q("UPDATE users SET email=$1 WHERE id=$2", [config.adminEmail, legacy.id]);
+      if (config.adminPass) await setPasswordFactor(legacy.id, config.adminPass);
+      await auditSec("sistema", "admin_email_rename", `${DEFAULT_ADMIN} -> ${config.adminEmail}`);
+      return null;
+    }
+  }
   const pass = config.adminPass || randomBytes(6).toString("base64url");
   const id = await createUser({ email: config.adminEmail, name: "Admin" });
   await setPasswordFactor(id, pass);

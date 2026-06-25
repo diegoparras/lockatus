@@ -1,59 +1,77 @@
-:root { --bg:#fafafa; --card:#fff; --ink:#1a1a22; --muted:#6b6b76; --line:#e6e6ea; --acc:#6c4fb3; --acc-ink:#fff; }
-@media (prefers-color-scheme: dark) { :root { --bg:#16161a; --card:#1e1e24; --ink:#ececf0; --muted:#9a9aa6; --line:#2c2c34; } }
-* { box-sizing: border-box; }
-body { margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
-.wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.card { width: 100%; max-width: 360px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px; }
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -.02em; }
-.lock { width: 24px; height: 24px; background: center / contain no-repeat url("/logo.svg"); display: inline-block; }
-.sub { color: var(--muted); font-size: 14px; margin: 6px 0 22px; }
-form { display: flex; flex-direction: column; gap: 12px; }
-input { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink); font-size: 14px; }
-input:focus { outline: none; border-color: var(--acc); }
-/* Ojito mostrar/ocultar contraseña */
-.pass-wrap { position: relative; display: flex; align-items: center; }
-.pass-wrap > input { flex: 1 1 auto; padding-right: 38px; }
-.pass-toggle { position: absolute; top: 0; bottom: 0; right: 5px; margin-block: auto; padding: 0;
-  width: 30px; height: 30px; display: grid; place-items: center; background: none; border: 0;
-  border-radius: 7px; color: var(--ink); opacity: .5; cursor: pointer; transition: opacity .15s, background .15s; }
-.pass-toggle:hover { opacity: 1; background: color-mix(in srgb, var(--ink) 8%, transparent); }
-.pass-toggle svg { width: 17px; height: 17px; }
-/* Botón "macizo" por defecto. Excluye .pass-toggle (y cualquier botón ícono) para que NO
-   herede padding/fondo del botón genérico — esa herencia descolocaba el ojito del login. */
-button:not(.pass-toggle) { padding: 11px; border: none; border-radius: 9px; background: var(--acc); color: var(--acc-ink); font-size: 14px; font-weight: 600; cursor: pointer; }
-.hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; line-height: 1.5; }
-.err { color: #c0392b; min-height: 16px; }
+/* styles.css — específico de Lockatus. Va DESPUÉS de escriba-ui.css (el canónico
+   manda los neutros, login, topbar, menú, modal, ojito). Acá solo: fuentes
+   vendorizadas, el ACENTO de Lockatus y los componentes propios (matriz, toast, QR). */
+
+/* ---- Fuentes vendorizadas (sin CDN, por CSP y privacidad) ----------------- */
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url("/vendor/fonts/inter-var-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url("/vendor/fonts/inter-var-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap;
+  src: url("/vendor/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2074, U+20AC, U+2122, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---- ACENTO Lockatus (lo único que cambia por app) ------------------------ */
+:root { --accent: #6c4fb3; --accent-2: #573f93; --on-accent: #fff; --ring: 0 0 0 3px rgba(108,79,179,.20); }
+:root[data-theme="dark"] { --accent: #9c86d6; --accent-2: #6c4fb3; --ring: 0 0 0 3px rgba(156,134,214,.26); }
+
+/* ---- Layout de la matriz (vista logueada) --------------------------------- */
 .panel { max-width: 1000px; margin: 0 auto; padding: 24px 20px; }
-.topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.matrix-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .crumb { color: var(--muted); font-size: 13px; }
-.topbar h2 { margin: 2px 0 0; font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
-.actions { display: flex; gap: 8px; }
-button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
-.newuser { display: flex; gap: 8px; margin-bottom: 14px; }
-.newuser input { flex: 1; }
-.tablewrap { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: auto; }
+.matrix-head h2 { margin: 2px 0 0; font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Formularios de alta (usuario / app) */
+.newuser { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.newuser input { flex: 1; min-width: 140px; }
+
+/* Tabla de accesos */
+.tablewrap { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: auto; box-shadow: var(--shadow); }
 table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
-.matrix th, .matrix td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+.matrix th, .matrix td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
 .matrix thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .matrix th.u, .matrix td.u { text-align: left; }
 .matrix tbody tr:last-child td { border-bottom: none; }
 .ucell { display: flex; align-items: center; gap: 10px; }
-.av { width: 28px; height: 28px; border-radius: 50%; background: var(--line); color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.av { width: 28px; height: 28px; border-radius: 50%; background: var(--card); color: var(--muted-2); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
 .uinfo { display: flex; flex-direction: column; line-height: 1.25; }
 .uinfo b { font-weight: 600; }
 .email { color: var(--muted); font-size: 11px; }
-.tfa .ok { color: #1f9d55; } .tfa .no { color: var(--muted); }
-select.role { padding: 5px 6px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink); font-size: 12px; max-width: 124px; }
-select.role[data-has] { border-color: var(--acc); }
+.tfa .ok { color: var(--ok); } .tfa .no { color: var(--muted); }
+select.role { padding: 5px 6px; font-size: 12px; max-width: 124px; border-radius: 7px; }
+select.role[data-has] { border-color: var(--accent); }
 .acc { text-align: right; white-space: nowrap; }
-button.mini { padding: 4px 8px; font-size: 11px; font-weight: 500; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; margin-left: 4px; cursor: pointer; }
+.acc button.mini { margin-left: 4px; }
 tr.off { opacity: .55; }
-.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 16px; border-radius: 9px; font-size: 13px; z-index: 50; max-width: 90vw; }
-.toast.bad { background: #c0392b; }
+
+/* ---- Cards centradas (login lo da el canónico; estas son las pantallas
+   internas: 2FA, contraseña, mensaje) ------------------------------------- */
+.wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.card { width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px 26px; box-shadow: var(--shadow); }
+.card .brand { display: flex; align-items: center; gap: 10px; }
+.card .brand h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -.02em; }
+.card .lock { width: 26px; height: 26px; background: center / contain no-repeat url("/logo.svg"); display: inline-block; flex: 0 0 auto; }
+.card .sub { color: var(--muted); font-size: 13px; margin: 8px 0 4px; }
 .col { display: flex; flex-direction: column; gap: 12px; }
 .row2 { display: flex; gap: 8px; }
 .row2 button { flex: 1; }
+.hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; line-height: 1.5; }
+.hint.err { color: var(--err); min-height: 16px; }
+
+/* 2FA: QR, secreto, códigos de recuperación */
 .qr { width: 168px; height: 168px; align-self: center; background: #fff; border-radius: 8px; padding: 6px; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; text-align: center; color: var(--muted); letter-spacing: 1px; word-break: break-all; margin: 0; }
-.codes { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; line-height: 1.9; white-space: pre-wrap; color: var(--ink); margin: 0; }
+.mono { font-family: var(--mono); font-size: 13px; text-align: center; color: var(--muted); letter-spacing: 1px; word-break: break-all; margin: 0; }
+.codes { font-family: var(--mono); font-size: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; line-height: 1.9; white-space: pre-wrap; color: var(--text); margin: 0; }
+
+/* ---- Toast --------------------------------------------------------------- */
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 9px; font-size: 13px; z-index: 150; max-width: 90vw; box-shadow: var(--shadow); }
+.toast.bad { background: var(--err); color: #fff; }

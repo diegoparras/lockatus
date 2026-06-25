@@ -6,9 +6,68 @@
   <title>Lockatus — Identidad de la Suite Escriba</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <meta name="lockatus-version" content="__LOCKATUS_VERSION__" />
+  <!-- Tema antes del primer paint (externo: la CSP es script-src 'self') -->
+  <script src="/theme.js"></script>
+  <!-- Canónico primero (manda los neutros), luego lo específico de Lockatus -->
+  <link rel="stylesheet" href="/escriba-ui.css" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+  <!-- Topbar canónico (solo en la vista logueada; app.js lo muestra/oculta). -->
+  <header class="app-header hidden" id="topbar">
+    <a class="logo-link" id="brand-home" title="Lockatus">
+      <span class="logo brand" style="background:center/contain no-repeat url('/logo.svg')"></span>
+      <h1>Lockatus</h1>
+    </a>
+    <div class="sp"></div>
+    <div class="menu-wrap" id="hdr-menu-wrap">
+      <button class="icon-btn" id="btn-menu" aria-haspopup="true" aria-expanded="false" title="Menú" aria-label="Menú">
+        <svg viewBox="0 0 20 20" width="17" height="17" fill="currentColor" aria-hidden="true"><circle cx="10" cy="4" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="10" cy="16" r="1.7"/></svg>
+      </button>
+      <div id="hdr-menu" class="menu menu-right hidden">
+        <div class="menu-user" id="user-info"></div>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btn-theme">
+          <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="10" cy="10" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 3.6a6.4 6.4 0 000 12.8z" fill="currentColor"/></svg>
+          <span>Tema claro / oscuro</span>
+        </button>
+        <button class="menu-item" id="btn-mi2fa">
+          <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8.5" width="12" height="8" rx="1.5"/><path d="M6.5 8.5V6a3.5 3.5 0 017 0v2.5"/></svg>
+          <span>Mi 2FA</span>
+        </button>
+        <button class="menu-item" id="btn-mipass">
+          <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="10" r="3"/><path d="M10.2 9h6.3M14 9v2.4M16.5 9v2"/></svg>
+          <span>Mi contraseña</span>
+        </button>
+        <button class="menu-item" id="btn-acerca">
+          <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 9.2v4.3"/><circle cx="10" cy="6.4" r=".7" fill="currentColor" stroke="none"/></svg>
+          <span>Acerca de Lockatus</span>
+        </button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="btn-logout">
+          <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6V4.5A1.5 1.5 0 019.5 3h5A1.5 1.5 0 0116 4.5v11a1.5 1.5 0 01-1.5 1.5h-5A1.5 1.5 0 018 15.5V14"/><path d="M11 10H3.5M6 7l-3 3 3 3"/></svg>
+          <span>Cerrar sesión</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Modal "Acerca de Lockatus" -->
+  <div id="acerca" class="modal-back hidden">
+    <div class="modal-card">
+      <button class="modal-x" id="acerca-x" aria-label="Cerrar">&#10005;</button>
+      <h3 class="modal-tit">Lockatus</h3>
+      <div class="modal-cuerpo">
+        <p>Identidad única de la Suite Escriba.</p>
+        <dl class="about-rows">
+          <dt>Versión</dt><dd id="about-version">—</dd>
+          <dt>Rol</dt><dd>Identidad y SSO de la Suite</dd>
+        </dl>
+        <p class="about-foot">Diego Parras · Ecosistema Escriba</p>
+      </div>
+    </div>
+  </div>
+
   <div id="app"></div>
   <script type="module" src="/app.js"></script>
 </body>
