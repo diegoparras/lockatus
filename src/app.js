@@ -194,6 +194,57 @@ function viewMessage(text) {
   document.getElementById("out").onclick = async () => { await api("POST", "/api/logout"); boot(); };
 }
 
+// Editor de una app (nombre, roles, redirect_uris) con Guardar / Eliminar / Cancelar.
+async function openAppEditor(slug) {
+  const r = await api("GET", `/api/admin/apps/${slug}`);
+  if (!r.ok) return toast(r.data.error || "No se pudo abrir la app", true);
+  const a = r.data;
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `
+    <div class="modal-card">
+      <button class="modal-x" type="button" aria-label="Cerrar">&#10005;</button>
+      <h3 class="modal-tit">Editar app · ${esc(a.slug)}</h3>
+      <div class="modal-cuerpo">
+        <label class="fld"><span>Nombre visible</span>
+          <input id="ea-name" value="${esc(a.name || "")}" autocomplete="off" /></label>
+        <label class="fld"><span>Roles (separados por coma)</span>
+          <input id="ea-roles" value="${esc((a.roles || []).join(", "))}" autocomplete="off" /></label>
+        <label class="fld"><span>Redirect URIs (uno por línea)</span>
+          <textarea id="ea-redirects" rows="3" spellcheck="false">${esc((a.redirect_uris || []).join("\n"))}</textarea></label>
+      </div>
+      <div class="modal-acciones">
+        <button class="ghost danger" id="ea-del" type="button">Eliminar app</button>
+        <span style="flex:1"></span>
+        <button class="ghost" id="ea-cancel" type="button">Cancelar</button>
+        <button id="ea-save" type="button">Guardar</button>
+      </div>
+    </div>`;
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const close = () => { back.remove(); document.removeEventListener("keydown", onKey); };
+  back.querySelector(".modal-x").onclick = close;
+  back.querySelector("#ea-cancel").onclick = close;
+  back.addEventListener("click", (e) => { if (e.target === back) close(); });
+  document.addEventListener("keydown", onKey);
+  back.querySelector("#ea-save").onclick = async () => {
+    const name = back.querySelector("#ea-name").value.trim() || a.slug;
+    const roles = back.querySelector("#ea-roles").value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    if (!roles.length) return toast("Poné al menos un rol", true);
+    const redirect_uris = back.querySelector("#ea-redirects").value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    const rr = await api("PUT", `/api/admin/apps/${a.slug}`, { name, roles, redirect_uris });
+    if (!rr.ok) return toast(rr.data.error || "No se pudo guardar", true);
+    toast("App actualizada"); close(); viewMatrix();
+  };
+  back.querySelector("#ea-del").onclick = async () => {
+    if (!confirm(`¿Eliminar la app "${a.name || a.slug}"? Se quitan también los accesos que tenga asignados.`)) return;
+    const rr = await api("DELETE", `/api/admin/apps/${a.slug}`);
+    if (!rr.ok) return toast(rr.data.error || "No se pudo eliminar", true);
+    toast("App eliminada"); close(); viewMatrix();
+  };
+  document.body.appendChild(back);
+  back.querySelector("#ea-name").focus();
+}
+
 // ---------- matriz de accesos ----------
 async function viewMatrix() {
   const r = await api("GET", "/api/admin/matrix");
@@ -236,7 +287,7 @@ async function viewMatrix() {
     <span class="uinfo"><b>${esc(u.name || u.email.split("@")[0])}</b><span class="email">${esc(u.email)}${u.status !== "active" ? " · deshabilitado" : ""}</span></span></div>`;
 
   // ---- Tabla (pantallas anchas): 1.ª columna Usuario sticky + scroll-x suave si hace falta ----
-  const head = `<th class="u">Usuario</th><th class="c-tfa">2FA</th>${apps.map((a) => `<th>${esc(a.name)}</th>`).join("")}<th class="c-acc" aria-label="Acciones"></th>`;
+  const head = `<th class="u">Usuario</th><th class="c-tfa">2FA</th>${apps.map((a) => `<th><button type="button" class="appcol" data-app="${esc(a.slug)}" title="Editar app">${esc(a.name)}</button></th>`).join("")}<th class="c-acc" aria-label="Acciones"></th>`;
   const tRow = (u) => `
     <tr class="${u.status !== "active" ? "off" : ""}">
       <td class="u">${userCell(u)}</td>
@@ -306,6 +357,9 @@ async function viewMatrix() {
     toast(`App agregada: ${slug} (${roles.join(", ")})`);
     viewMatrix();
   });
+
+  // Click en el nombre de una app (encabezado de columna) → editor de la app.
+  app.querySelectorAll(".appcol").forEach((b) => (b.onclick = () => openAppEditor(b.dataset.app)));
 
   app.querySelectorAll("select.role").forEach((sel) => sel.addEventListener("change", async () => {
     const r3 = await api("PUT", `/api/admin/users/${sel.dataset.uid}/role`, { app: sel.dataset.app, role: sel.value });

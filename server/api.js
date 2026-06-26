@@ -257,9 +257,28 @@ export async function handle(req, res, path, dbOk) {
       const name = String(b.name || slug);
       const redirects = Array.isArray(b.redirect_uris) ? b.redirect_uris.map(String) : [];
       await db.ensureApp(slug, name, roles, redirects);
-      if (redirects.length) await db.setRedirectUris(slug, redirects); // ensureApp solo setea redirects al crear
+      // Si el cliente mandó redirect_uris (aunque sea vacío), los REEMPLAZA — así también
+      // sirve para EDITAR/limpiar, no solo para el alta (ensureApp no los pisa al hacer upsert).
+      if (Array.isArray(b.redirect_uris)) await db.setRedirectUris(slug, redirects);
       await db.auditSec(actor, "alta_app", `${slug} [${roles.join(",")}]`);
       return send(res, 200, { ok: true, slug, name, roles });
+    }
+
+    // Detalle de una app (para el editor del panel): slug, nombre, roles, redirect_uris.
+    if (seg[2] === "apps" && seg[3] && !seg[4] && m === "GET") {
+      const a = await db.getApp(String(seg[3]).toLowerCase());
+      if (!a) return send(res, 404, { error: "app desconocida" });
+      return send(res, 200, a);
+    }
+
+    // Baja de una app. La del hub (lockatus) no se puede borrar. Los accesos caen por cascada.
+    if (seg[2] === "apps" && seg[3] && !seg[4] && m === "DELETE") {
+      const slug = String(seg[3]).toLowerCase();
+      if (slug === "lockatus") return send(res, 400, { error: "No se puede eliminar la app del hub." });
+      if (!(await db.getApp(slug))) return send(res, 404, { error: "app desconocida" });
+      await db.deleteApp(slug);
+      await db.auditSec(actor, "baja_app", slug);
+      return send(res, 200, { ok: true });
     }
 
     if (seg[2] === "apps" && seg[3] && seg[4] === "redirect-uris" && m === "PUT") {

@@ -164,6 +164,7 @@ export const listMatrix = async (org = 1) => (await q(`
 
 export const getApp = async (slug) => (await q("SELECT slug,name,roles,redirect_uris FROM apps WHERE slug=$1", [slug])).rows[0] || null;
 export const setRedirectUris = async (slug, uris) => void (await q("UPDATE apps SET redirect_uris=$1 WHERE slug=$2", [uris, slug]));
+export const deleteApp = async (slug) => void (await q("DELETE FROM apps WHERE slug=$1", [slug])); // role_assignments cae por ON DELETE CASCADE
 export const roleFor = async (userId, appSlug) => (await q("SELECT role FROM role_assignments WHERE user_id=$1 AND app_slug=$2", [userId, appSlug])).rows[0]?.role || null;
 
 // ---- OIDC: códigos de autorización (un solo uso, cortos) + refresh tokens ----
