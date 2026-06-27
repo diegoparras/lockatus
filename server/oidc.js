@@ -49,7 +49,11 @@ export async function authorize(req, res, session) {
 
   // La matriz manda: sin rol para esta app, no entra.
   const role = await db.roleFor(user.id, clientId);
-  if (!role) return back({ error: "access_denied" });
+  if (!role) {
+    console.warn(`[oidc] ACCESS_DENIED — usuario="${user.email}" (id ${user.id}) NO tiene rol para app="${clientId}"`);
+    return back({ error: "access_denied" });
+  }
+  console.log(`[oidc] OK — usuario="${user.email}" app="${clientId}" rol="${role}"`);
 
   const code = randomToken(24);
   await db.saveAuthCode({ code, userId: user.id, app: clientId, redirectUri, challenge, scope, nonce });
