@@ -1,6 +1,6 @@
 {
   "name": "lockatus",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Lockatus — hub de identidad y SSO de la Suite Escriba. Login multiusuario con 2FA (TOTP), OIDC (Authorization Code + PKCE), roles por app y auditoría opcional. Self-hosted. Parte de la familia Escriba.",
   "type": "module",
   "license": "Apache-2.0",

@@ -64,10 +64,19 @@ export async function authorize(req, res, session) {
 // POST /token — canje del código (o refresh) por tokens.
 export async function token(req, res) {
   const b = await readForm(req);
+  // El client_id puede venir en el body (clientes públicos / PKCE puro, ej. nuestro
+  // lockatus-client) o por HTTP Basic auth (clientes confidenciales como authlib /
+  // Open WebUI con client_secret_basic). Aceptamos ambos. El secret no se valida:
+  // Lockatus es cliente público + PKCE; la prueba de posesión es el code_verifier.
+  let clientId = b.client_id;
+  if (!clientId) {
+    const a = req.headers.authorization || "";
+    if (a.startsWith("Basic ")) { try { clientId = Buffer.from(a.slice(6), "base64").toString("utf8").split(":")[0]; } catch { /* ignore */ } }
+  }
   if (b.grant_type === "authorization_code") {
     const rec = await db.takeAuthCode(b.code || "");
     if (!rec) return tokenErr(res, "invalid_grant");
-    if (rec.app_slug !== b.client_id || rec.redirect_uri !== b.redirect_uri) return tokenErr(res, "invalid_grant");
+    if (rec.app_slug !== clientId || rec.redirect_uri !== b.redirect_uri) return tokenErr(res, "invalid_grant");
     if (sha256b64url(b.code_verifier || "") !== rec.code_challenge) return tokenErr(res, "invalid_grant");
     const user = await db.getUserById(rec.user_id);
     if (!user || user.status !== "active") return tokenErr(res, "invalid_grant");
