@@ -181,6 +181,26 @@ button.icon-btn:hover { background: var(--card-2); border-color: var(--hairline)
   border-radius: 7px; color: var(--muted); cursor: pointer; transition: color .15s, background .15s; }
 .pass-toggle:hover { color: var(--text); background: var(--card-2); }
 .pass-toggle svg { width: 16px; height: 16px; }
+/* Los controles que el navegador mete DENTRO del campo cuando hay una
+   contraseña guardada: la llave de autocompletado de Chrome/Safari y el ojo
+   propio de Edge. Viven en el borde derecho, justo donde va el nuestro, y el de
+   Edge sólo existe mientras el campo es `password`: al mostrar la clave
+   desaparece y el resto se corre.
+
+   CADA UNO EN SU PROPIA REGLA, sin agrupar: si un selector de una lista separada
+   por comas no se reconoce, el navegador descarta la regla ENTERA y no se oculta
+   ninguno. Agrupados no funcionaba nada.
+
+   `visibility` y no `display` en los de WebKit: con `display:none` Chrome los
+   sigue reservando en algunas versiones. */
+.pass-wrap > input::-ms-reveal { display: none; }
+.pass-wrap > input::-ms-clear { display: none; }
+.pass-wrap > input::-webkit-credentials-auto-fill-button {
+  visibility: hidden; pointer-events: none; position: absolute; right: 0; width: 0; margin: 0;
+}
+.pass-wrap > input::-webkit-strong-password-auto-fill-button {
+  visibility: hidden; pointer-events: none; position: absolute; right: 0; width: 0; margin: 0;
+}
 /* En modo federado el campo de clave está oculto → su ojito tampoco se muestra. */
 .pass-wrap.hidden .pass-toggle, input.hidden + .pass-toggle { display: none !important; }
 
