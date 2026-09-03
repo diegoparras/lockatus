@@ -50,8 +50,16 @@ function showLinkDialog(title, link, emailed, email) {
 }
 
 // ---------- ojito mostrar/ocultar contraseña (login + cambio de clave) ----------
-const EYE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
-const EYE_OFF_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68M6.6 6.6A13.4 13.4 0 0 0 2 11s3.6 7 10 7a9.1 9.1 0 0 0 5.4-1.6"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
+// El ojo se dibuja UNA vez y el estado "oculto" sólo le agrega la barra
+// encima. Antes eran dos dibujos distintos: la almendra cerrada se convertía
+// en dos arcos abiertos, la pupila en un arco partido y el centro óptico se
+// corría de y=12 a y=11. El botón no se movía --medido: mismo `right` y mismo
+// centro en los dos estados-- pero el ícono se transformaba entero, y eso se
+// ve como si saltara. Compartiendo el trazo, al mostrar la clave sólo aparece
+// la barra: nada se mueve.
+const EYE_BODY = `<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>`;
+const EYE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${EYE_BODY}</svg>`;
+const EYE_OFF_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${EYE_BODY}<line x1="3" y1="3" x2="21" y2="21"/></svg>`;
 function eyeify(root) {
   (root || document).querySelectorAll('input[type="password"]').forEach((inp) => {
     if (inp.dataset.eye || inp.closest(".pass-wrap")) return;
