@@ -232,6 +232,8 @@ export async function seedAdmin() {
   await ensureApp("trustux", "Trustux", ["admin", "editor", "lector"]);
   await ensureApp("arcanum", "Arcanum", ["admin", "editor", "lector"]);
   await ensureApp("selega", "Selega", ["agente", "supervisor", "auditor", "admin", "superadmin"]);
+  await ensureApp("searchgirl", "Searchgirl", ["admin", "usuario"]);
+  await ensureApp("poirot", "Poirot", ["admin", "investigador", "lector"]);
 
   const existing = await getUserByEmail(config.adminEmail);
   if (existing) {

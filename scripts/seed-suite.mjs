@@ -19,6 +19,9 @@ const APPS = {
   anonimal:  { cb: "/callback",              port: process.env.ANONIMAL_PORT || 8097, role: "admin" },
   fisherboy: { cb: "/auth/callback",         port: process.env.FISHERBOY_PORT || 8092, role: "dios" },
   trustux:   { cb: "/callback",              port: process.env.TRUSTUX_PORT || 8095, role: "admin" },
+  cogo:      { cb: "/auth/callback",         port: process.env.COGO_PORT || 8096, role: "admin" },
+  searchgirl:{ cb: "/auth/callback",         port: process.env.SEARCHGIRL_PORT || 8089, role: "admin" },
+  poirot:    { cb: "/auth/callback",         port: process.env.POIROT_PORT || 8091, role: "admin" },
 };
 
 let cookie = "";
