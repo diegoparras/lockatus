@@ -172,11 +172,20 @@ button.icon-btn:hover { background: var(--card-2); border-color: var(--hairline)
 @keyframes esc-cardpop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 
 /* ---- Ojito mostrar/ocultar contraseña (compartido) ------------------------- */
-/* REGLA (para que no se vuelva a descentrar): el toggle es position:absolute con
-   top:50% + translateY(-50%), padding:0. El input padre va en .pass-wrap. */
+/* REGLA (para que no se vuelva a descentrar): el toggle se centra con
+   top:0 + bottom:0 + margin:auto, NO con transform. El input padre va en
+   .pass-wrap.
+
+   Antes se centraba con top:50% + translateY(-50%), y eso lo dejaba a merced de
+   cualquier otra regla que tocara `transform`. La de más arriba --
+   `button:active { transform: translateY(1px) }`, el hundido de los botones --
+   le pisaba el centrado entero al apretarlo: perdía los -14px de translateY y
+   sumaba 1px, o sea que el ojito se caía 15px mientras mantenías el clic.
+   Centrando por márgenes, el transform queda libre para el efecto de apretado y
+   los dos conviven. */
 .pass-wrap { position: relative; display: flex; align-items: center; }
 .pass-wrap > input { flex: 1 1 auto; padding-right: 36px; }
-.pass-toggle { position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+.pass-toggle { position: absolute; top: 0; bottom: 0; right: 4px; margin: auto 0;
   width: 28px; height: 28px; padding: 0; display: grid; place-items: center; background: none; border: 0;
   border-radius: 7px; color: var(--muted); cursor: pointer; transition: color .15s, background .15s; }
 .pass-toggle:hover { color: var(--text); background: var(--card-2); }
