@@ -5,6 +5,13 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 [Versionado Semantico](https://semver.org/lang/es/). Cada deploy sube la version y agrega su
 seccion aca: sin ella el CI no publica la imagen.
 
+## [0.1.5] - 2026-11-20
+
+### Seguridad
+- **`.dockerignore`**: un build local de la imagen ya no copia el `.env` (secretos), el historial
+  de git ni el `node_modules` de la maquina. La imagen del CI no estaba afectada (se arma sobre
+  el checkout, sin `.env`).
+
 ## [0.1.4] - 2026-11-20
 
 ### Nuevo

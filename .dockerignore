@@ -1,0 +1,8 @@
+# Nada de secretos ni artefactos locales en la imagen (el Dockerfile hace COPY . /app).
+.env
+.env.*
+!.env.example
+.git
+node_modules
+npm-debug.log*
+*.log
