@@ -5,6 +5,18 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 [Versionado Semantico](https://semver.org/lang/es/). Cada deploy sube la version y agrega su
 seccion aca: sin ella el CI no publica la imagen.
 
+## [0.1.6] - 2026-11-20
+
+### Seguridad
+- **La contrasena generada del admin ya no se escribe en los registros del contenedor.** Sin
+  `LOCKATUS_ADMIN_PASS`, queda en `/tmp/lockatus-admin-clave-inicial` (permisos 0600, solo la app la lee;
+  `LOCKATUS_SECRETOS_DIR` cambia la carpeta) y el log dice como leerla desde la consola del servicio.
+  Si el archivo se pierde, fijar `LOCKATUS_ADMIN_PASS` y reiniciar resetea la contrasena del admin.
+- La contrasena generada pasa de 8 a 16 caracteres.
+
+### Cambiado
+- Los avisos del arranque dicen "AVISO:" en lugar de un simbolo (sin emojis en la consola).
+
 ## [0.1.5] - 2026-11-20
 
 ### Seguridad

@@ -6,7 +6,7 @@ function masterSecret() {
   if (s) return s;
   // Dev sin secreto: uno EFÍMERO + aviso fuerte. NO usar en prod (al reiniciar se pierden
   // los TOTP enrolados y se invalidan las sesiones). El docker-compose exige LOCKATUS_SECRET.
-  console.warn("  ⚠ LOCKATUS_SECRET no seteado — usando uno EFÍMERO (solo dev).");
+  console.warn("  AVISO: LOCKATUS_SECRET no seteado — usando uno EFÍMERO (solo dev).");
   return randomBytes(32).toString("hex");
 }
 
@@ -22,7 +22,7 @@ export const config = {
   // = el issuer (el front se sirve desde el mismo origen). Se puede override con LOCKATUS_APP_URL.
   appUrl: (process.env.LOCKATUS_APP_URL || issuer).replace(/\/$/, ""),
   adminEmail: process.env.LOCKATUS_ADMIN_EMAIL || "admin@lockatus.local",
-  adminPass: process.env.LOCKATUS_ADMIN_PASS || "", // vacío → se genera y se imprime una vez
+  adminPass: process.env.LOCKATUS_ADMIN_PASS || "", // vacío → se genera y queda en un archivo 0600 (clave-inicial.js), nunca en el log
   cookieName: "lockatus_session",
   sessionTtlMs: 1000 * 60 * 60 * 12, // sesión del hub (navegador): 12 h
   cookieSecure: process.env.LOCKATUS_SECURE_COOKIE === "1",

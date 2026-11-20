@@ -20,7 +20,7 @@ export async function initKeys() {
     const pkcs8 = await exportPKCS8(privateKey);
     spki = await exportSPKI(publicKey);
     try { await setConfig("oidc_priv", encryptSecret(pkcs8)); await setConfig("oidc_pub", spki); }
-    catch { console.warn("  ⚠ No se pudo persistir la clave de firma (DB?) — clave EFÍMERA en memoria."); }
+    catch { console.warn("  AVISO: No se pudo persistir la clave de firma (DB?) — clave EFÍMERA en memoria."); }
   }
 
   const jwk = await exportJWK(_pub);

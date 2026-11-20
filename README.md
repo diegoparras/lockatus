@@ -52,7 +52,7 @@ también como `:X.Y.Z` y GitHub crea el Release `vX.Y.Z` con las mismas notas.
 | `LOCKATUS_SECRET` | — (**obligatoria**) | clave maestra (cifra TOTP + firma la sesión) |
 | `LOCKATUS_ISSUER` | `http://localhost:8081` | URL pública del emisor (va en los tokens) |
 | `LOCKATUS_ADMIN_EMAIL` | `admin@lockatus.local` | primer superadmin |
-| `LOCKATUS_ADMIN_PASS` | *(vacío)* | vacío → se genera y se imprime una vez en los logs |
+| `LOCKATUS_ADMIN_PASS` | *(vacío)* | vacío → se genera y queda en `/tmp/lockatus-admin-clave-inicial` (0600, nunca en los logs). Fijarla y reiniciar resetea la del admin |
 | `LOCKATUS_SECURE_COOKIE` | `0` | poné `1` detrás de TLS |
 | `LOCKATUS_PORT` | `8081` | puerto del host |
 

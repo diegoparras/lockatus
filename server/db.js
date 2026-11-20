@@ -253,10 +253,10 @@ export async function seedAdmin() {
       return null;
     }
   }
-  const pass = config.adminPass || randomBytes(6).toString("base64url");
+  const pass = config.adminPass || randomBytes(12).toString("base64url");
   const id = await createUser({ email: config.adminEmail, name: "Admin" });
   await setPasswordFactor(id, pass);
   await assignRole(id, "lockatus", "admin", "sistema");
   await auditSec("sistema", "seed_admin", config.adminEmail);
-  return config.adminPass ? null : pass; // pass generada → se imprime una vez
+  return config.adminPass ? null : pass; // pass generada → index.js la guarda en un archivo 0600 (nunca al log)
 }

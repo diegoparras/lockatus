@@ -37,7 +37,7 @@ export async function sendSetupLink(to, link, kind = "alta") {
     return true;
   } catch (e) {
     // No rompemos el flujo ni revelamos el link en el log: solo un aviso genérico.
-    console.warn("  ⚠ SMTP: no se pudo enviar el correo de alta/reset:", e?.message || String(e));
+    console.warn("  AVISO: SMTP: no se pudo enviar el correo de alta/reset:", e?.message || String(e));
     return false;
   }
 }

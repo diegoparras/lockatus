@@ -8,7 +8,7 @@ Lockatus es el hub de identidad de la suite. Self-hosted, una imagen Docker + su
 git clone https://github.com/diegoparras/lockatus.git && cd lockatus
 cp .env.example .env        # editá los valores de abajo
 docker compose up -d --build
-docker compose logs lockatus   # copiá la contraseña de admin generada (se imprime UNA vez)
+docker compose exec lockatus cat /tmp/lockatus-admin-clave-inicial   # contraseña de admin generada (nunca va a los logs)
 ```
 
 ## 2. Variables obligatorias (`.env`)
@@ -19,7 +19,7 @@ docker compose logs lockatus   # copiá la contraseña de admin generada (se imp
 | `LOCKATUS_SECRET` | **clave maestra** — cifra los secretos TOTP y firma la sesión. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Guardala**: si la perdés, hay que re-enrolar los 2FA. |
 | `LOCKATUS_ISSUER` | la URL pública del hub (ej. `https://auth.tu-dominio.com`). Va en los tokens; **debe ser la que ven las apps**. |
 
-`LOCKATUS_ADMIN_PASS` vacío → se genera y se imprime una vez. Detrás de TLS: `LOCKATUS_SECURE_COOKIE=1`.
+`LOCKATUS_ADMIN_PASS` vacío → se genera y queda en `/tmp/lockatus-admin-clave-inicial` (0600, nunca en los logs; `LOCKATUS_SECRETOS_DIR` cambia la carpeta). Fijarla y reiniciar resetea la del admin. Detrás de TLS: `LOCKATUS_SECURE_COOKIE=1`.
 
 ## 3. Producción
 

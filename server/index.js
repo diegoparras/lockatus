@@ -9,6 +9,7 @@ import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { initDb, seedAdmin } from "./db.js";
+import { guardarClaveInicial, avisoClaveInicial } from "./clave-inicial.js";
 import { initKeys } from "./keys.js";
 import { handle } from "./api.js";
 
@@ -65,7 +66,7 @@ server.on("error", (e) => {
 server.on("listening", () => {
   const p = server.address().port;
   console.log(`\n  Lockatus → http://localhost:${p}   (iss: ${config.issuer})`);
-  if (!dbOk) console.log("  ⚠ Postgres no disponible — /health y /jwks OK; login/persistencia OFF\n");
+  if (!dbOk) console.log("  AVISO: Postgres no disponible — /health y /jwks OK; login/persistencia OFF\n");
 });
 
 (async () => {
@@ -73,10 +74,17 @@ server.on("listening", () => {
   try { await initDb(); dbOk = true; }
   catch (e) {
     const url = String(config.databaseUrl || "").replace(/:[^:@/]+@/, ":****@");
-    console.warn("  ⚠ No se pudo inicializar Postgres:", e.message || e.code || String(e), "| url:", url);
+    console.warn("  AVISO: No se pudo inicializar Postgres:", e.message || e.code || String(e), "| url:", url);
   }
-  try { await initKeys(); } catch (e) { console.warn("  ⚠ Claves de firma:", e.message || String(e)); }
-  if (dbOk) { try { passGenerada = await seedAdmin(); } catch (e) { console.warn("  ⚠ Seed admin:", e.message || String(e)); } }
+  try { await initKeys(); } catch (e) { console.warn("  AVISO: Claves de firma:", e.message || String(e)); }
+  if (dbOk) { try { passGenerada = await seedAdmin(); } catch (e) { console.warn("  AVISO: Seed admin:", e.message || String(e)); } }
   server.listen(port);
-  if (passGenerada) console.log(`  Admin: ${config.adminEmail}   ·   Pass (generada, se muestra una vez): ${passGenerada}`);
+  // La contrasena generada NUNCA va al log: queda en un archivo 0600 y se dice donde (clave-inicial.js).
+  if (passGenerada) {
+    let aviso;
+    try { aviso = avisoClaveInicial({ email: config.adminEmail, ruta: guardarClaveInicial(passGenerada) }); }
+    catch (e) { aviso = avisoClaveInicial({ email: config.adminEmail, error: e }); }
+    passGenerada = null;
+    for (const l of aviso) console.log(l);
+  }
 })();
