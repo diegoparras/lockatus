@@ -8,6 +8,7 @@ import { verifyTotp, newSecret, otpauthUrl, qrDataUrl } from "./totp.js";
 import * as db from "./db.js";
 import * as oidc from "./oidc.js";
 import { sendSetupLink, smtpConfigured } from "./mailer.js";
+import * as nov from "./novedades.js";
 
 function send(res, code, obj, cookie) {
   const h = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
@@ -167,6 +168,19 @@ export async function handle(req, res, path, dbOk) {
     const roles = await db.rolesDe(u.id);
     const totp = !!(await db.getTotpFactor(u.id));
     return send(res, 200, { user: { id: u.id, email: u.email, name: u.name }, roles, totp, must_change: u.must_change_password, admin: roles.lockatus === "admin" });
+  }
+
+  // ---- novedades por version (CHANGELOG), sobre la sesion del hub ----
+  // GET /api/novedades?desde=X.Y.Z -> que cambio desde la ultima version vista; ?todas=1 -> historial.
+  if (path === "/api/novedades" && m === "GET") {
+    const s = getSession(req); if (!s) return send(res, 401, { error: "no autenticado" });
+    const q = new URL(req.url, "http://x").searchParams;
+    const vista = /^\d+\.\d+\.\d+$/.test(q.get("desde") || "") ? q.get("desde") : null;
+    const version = nov.versionActual();
+    const versiones = q.get("todas") === "1"
+      ? nov.todas().filter((x) => nov.comparar(x.version, version) <= 0)
+      : nov.desde(nov.todas(), vista, version);
+    return send(res, 200, { ok: true, version, versiones });
   }
 
   // ---- cuenta propia: cambiar contraseña (invalida sesiones en todas las apps) ----

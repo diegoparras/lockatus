@@ -121,6 +121,45 @@ function openAcerca() {
   show(acercaModal);
 }
 
+// ---------- Novedades: que cambio en cada version (sale del CHANGELOG.md) ----------
+// Aparece solo al entrar al panel despues de una actualizacion (una vez por navegador: la ultima
+// version vista queda en localStorage); el historial queda en el menu y en "Acerca de".
+const novModal = document.getElementById("novedades");
+const NOV_KEY = "lockatus.versionVista";
+// Primero se escapa el HTML (esc); recien despues se convierten **negrita** y `codigo`.
+const novMd = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+function novHtml(versiones) {
+  return versiones.map((v) =>
+    `<div class="nov-ver"><b>v${esc(v.version)}</b>${v.fecha ? `<span>${esc(v.fecha)}</span>` : ""}</div>` +
+    v.secciones.map((s) => `<div class="nov-sec">${novMd(s.titulo)}</div><ul class="nov-list">${s.items.map((i) => `<li>${novMd(i)}</li>`).join("")}</ul>`).join(""),
+  ).join("");
+}
+function verNovedades(d, bajada) {
+  document.getElementById("nov-bajada").innerHTML = bajada;
+  document.getElementById("nov-lista").innerHTML = d.versiones.length ? novHtml(d.versiones) : "<p>No hay notas para esta versión.</p>";
+  show(novModal);
+}
+let novAvisado = false; // una vez por carga de página (viewMatrix se re-renderiza seguido)
+async function avisarNovedades() {
+  if (novAvisado) return;
+  novAvisado = true;
+  let vista = null;
+  try { vista = localStorage.getItem(NOV_KEY); } catch { /* sin storage */ }
+  const r = await api("GET", "/api/novedades" + (vista ? "?desde=" + encodeURIComponent(vista) : ""));
+  if (!r.ok) return;
+  try { localStorage.setItem(NOV_KEY, r.data.version); } catch { /* sin storage */ }
+  if (vista === r.data.version || !r.data.versiones.length) return;
+  if (document.querySelector(".modal-back:not(.hidden)")) return; // no tapar lo que el usuario abrio
+  verNovedades(r.data, `Lockatus se actualizó a la <b>v${esc(r.data.version)}</b>. Esto cambió desde la última versión que viste:`);
+}
+async function novedadesTodas() {
+  hide(acercaModal);
+  const r = await api("GET", "/api/novedades?todas=1");
+  if (!r.ok) return toast("No se pudieron cargar las novedades", true);
+  verNovedades({ ...r.data, versiones: r.data.versiones.slice(0, 15) },
+    `Versión instalada: <b>v${esc(r.data.version)}</b>. Últimas versiones, de la más nueva a la más vieja:`);
+}
+
 // Wiring del chrome (una sola vez; los elementos son estáticos en index.html).
 (function wireChrome() {
   const btnMenu = document.getElementById("btn-menu");
@@ -138,6 +177,7 @@ function openAcerca() {
     closeMenu();
     closeRowMenus(null);
     hide(acercaModal);
+    hide(novModal);
   });
   const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
   bind("brand-home", () => boot());
@@ -148,6 +188,11 @@ function openAcerca() {
   bind("btn-logout", async () => { closeMenu(); await api("POST", "/api/logout"); boot(); });
   bind("acerca-x", () => hide(acercaModal));
   if (acercaModal) acercaModal.addEventListener("click", (e) => { if (e.target === acercaModal) hide(acercaModal); });
+  bind("btn-novedades", () => { closeMenu(); novedadesTodas(); });
+  bind("acerca-novedades", () => novedadesTodas());
+  bind("novedades-x", () => hide(novModal));
+  bind("novedades-ok", () => hide(novModal));
+  if (novModal) novModal.addEventListener("click", (e) => { if (e.target === novModal) hide(novModal); });
 })();
 
 // El topbar solo se ve en la vista logueada (la matriz). El resto de vistas lo ocultan.
@@ -264,6 +309,7 @@ async function viewMatrix() {
   const ui = document.getElementById("user-info");
   if (ui && me.ok) ui.textContent = `${me.data.user.email} · Admin`;
   chrome(true);
+  setTimeout(avisarNovedades, 400);
 
   // Icono de 2FA (sobrio, sin emoji): candado-check para activo, guion para inactivo.
   const TFA_ON_SVG = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8.5" width="12" height="8" rx="1.5"/><path d="M6.5 8.5V6a3.5 3.5 0 0 1 7 0v2.5"/><path d="M8.2 12.4l1.4 1.4 2.4-2.6"/></svg>`;

@@ -29,6 +29,13 @@ La **clave maestra** `LOCKATUS_SECRET` cifra los secretos TOTP y firma la sesió
 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. La clave de firma OIDC
 (RS256) se **genera sola** en el primer arranque y se guarda cifrada en la base.
 
+**Versión y novedades de cada deploy.** Cada deploy sube el *patch* de la versión y agrega su
+sección `## [X.Y.Z]` al [`CHANGELOG.md`](CHANGELOG.md) (sin ella el CI no publica). Lo primero
+que escribe el contenedor al levantar (EasyPanel > servicio > Registros, o `docker compose logs`)
+es un cartel `[lockatus] LOCKATUS vX.Y.Z` con lo que cambia; el panel avisa "Novedades" una vez
+tras cada actualización (y las deja en el menú y en "Acerca de", solo con sesión); la imagen sale
+también como `:X.Y.Z` y GitHub crea el Release `vX.Y.Z` con las mismas notas.
+
 ## Endpoints (descubrimiento OIDC)
 
 | Ruta | Para qué |

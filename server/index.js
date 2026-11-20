@@ -1,5 +1,7 @@
 // index.js — servidor de Lockatus: sirve el front estático y enruta API + endpoints OIDC.
 // No-fatal si Postgres no está: igual levanta y responde /health y /jwks (clave efímera).
+// Primer import: el cartel de version y novedades (tiene que ser la primera salida del proceso).
+import "./cartel.js";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
