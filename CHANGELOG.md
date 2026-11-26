@@ -5,6 +5,14 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 [Versionado Semantico](https://semver.org/lang/es/). Cada deploy sube la version y agrega su
 seccion aca: sin ella el CI no publica la imagen.
 
+## [0.1.7] - 2026-11-26
+
+### Cambiado
+- **Arcanum ofrece sus roles reales: superadmin, admin, operador y lectura** (antes admin,
+  editor y lector). Desde Lockatus ya se puede dar superadmin de Arcanum, que es el que crea
+  usuarios, cambia los topes de Monotributo, la receta de Mis Comprobantes y la conexion con
+  Fisherboy. Los accesos que ya existian se pasan solos: editor a operador y lector a lectura.
+
 ## [0.1.6] - 2026-11-20
 
 ### Seguridad

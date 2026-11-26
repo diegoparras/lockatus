@@ -230,7 +230,11 @@ export async function seedAdmin() {
   await ensureApp("anonimal", "Anonimal", ["admin", "editor", "lector"]);
   await ensureApp("fulgoria", "Fulgoria", ["admin", "editor", "lector"]);
   await ensureApp("trustux", "Trustux", ["admin", "editor", "lector"]);
-  await ensureApp("arcanum", "Arcanum", ["admin", "editor", "lector"]);
+  // Arcanum usa los nombres de sus propios roles (superadmin crea usuarios y cambia topes y
+  // receta; admin no). Los accesos viejos editor/lector pasan a operador/lectura.
+  await ensureApp("arcanum", "Arcanum", ["superadmin", "admin", "operador", "lectura"]);
+  await q(`UPDATE role_assignments SET role = CASE role WHEN 'editor' THEN 'operador' ELSE 'lectura' END
+           WHERE app_slug = 'arcanum' AND role IN ('editor', 'lector')`);
   await ensureApp("selega", "Selega", ["agente", "supervisor", "auditor", "admin", "superadmin"]);
   await ensureApp("searchgirl", "Searchgirl", ["admin", "usuario"]);
   await ensureApp("poirot", "Poirot", ["admin", "investigador", "lector"]);
