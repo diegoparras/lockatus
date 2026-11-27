@@ -52,7 +52,7 @@ for (const [slug, a] of Object.entries(APPS)) {
   // Además del de Docker, registramos el de localhost (por si entrás directo por localhost).
   const localRedirect = `http://localhost:${a.port}${a.cb}`;
   const ru = await call("PUT", `/api/admin/apps/${slug}/redirect-uris`, { redirect_uris: [redirect, localRedirect] });
-  const rr = await call("PUT", "/api/admin/users/1/role", { app: slug, role: a.role });
+  const rr = await call("PUT", "/api/admin/users/1/role", { app: slug, role: a.role, confirm: true, via: "api" });
   console.log(`  ${slug.padEnd(10)} redirect=${ru.status} role(${a.role})=${rr.status}  → ${redirect}`);
 }
 console.log("seed-suite: listo");

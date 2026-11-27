@@ -34,7 +34,10 @@ check("rechaza alta sin roles", noRoles.status === 400);
 // crear un usuario y asignarle un rol declarado por la app nueva
 const u = await call("POST", "/api/admin/users", { email: "probe.user@lockatus.local", name: "Probe User" });
 const uid = u.json?.id;
-const assignOk = await call("PUT", `/api/admin/users/${uid}/role`, { app: SLUG, role: "jefe" });
+// "jefe" es el primer rol de un catálogo sin palabras conocidas → rol alto → pide confirmación.
+const sinConfirm = await call("PUT", `/api/admin/users/${uid}/role`, { app: SLUG, role: "jefe" });
+check("dar el rol más alto de la app sin confirmar → 409 need_confirm", sinConfirm.status === 409 && sinConfirm.json?.need_confirm === true);
+const assignOk = await call("PUT", `/api/admin/users/${uid}/role`, { app: SLUG, role: "jefe", confirm: true });
 check("se puede asignar un rol DECLARADO por la app nueva", assignOk.status === 200 && assignOk.json?.role === "jefe");
 const assignBad = await call("PUT", `/api/admin/users/${uid}/role`, { app: SLUG, role: "fantasma" });
 check("rechaza un rol NO declarado por la app", assignBad.status === 400);

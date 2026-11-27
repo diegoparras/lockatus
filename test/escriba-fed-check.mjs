@@ -34,7 +34,7 @@ const check = (n, c) => { if (c) { ok++; console.log("  ✓", n); } else { fail+
 
 await adminCall("POST", "/api/login", { email: "admin@lockatus.local", password: "admin1234" });
 await adminCall("PUT", "/api/admin/apps/escriba/redirect-uris", { redirect_uris: [APP + "/auth/callback"] });
-await adminCall("PUT", "/api/admin/users/1/role", { app: "escriba", role: "dueño" });
+await adminCall("PUT", "/api/admin/users/1/role", { app: "escriba", role: "dueño", confirm: true });
 
 // 1) Sin sesión en el hub: /auth/login delega → aterriza en Lockatus con la continuación OIDC.
 for (const k in jars) delete jars[k];

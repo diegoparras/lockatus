@@ -71,6 +71,11 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_assign_user ON role_assignments(user_id);
     CREATE INDEX IF NOT EXISTS idx_assign_app ON role_assignments(app_slug);
     CREATE INDEX IF NOT EXISTS idx_audit_sec_ts ON audit_security(ts);
+    -- Detalle estructurado de los cambios de acceso (quién, a quién, en qué app, de qué rol a
+    -- cuál y desde dónde): de acá sale el historial de cada celda de la matriz.
+    ALTER TABLE audit_security ADD COLUMN IF NOT EXISTS detail JSONB;
+    CREATE INDEX IF NOT EXISTS idx_audit_sec_celda ON audit_security ((detail->>'uid'), (detail->>'app'))
+      WHERE detail IS NOT NULL;
   `);
 }
 
@@ -217,8 +222,65 @@ export async function consumeSetupToken(token) {
 }
 
 // ---- auditoría de seguridad (siempre on) ----
-export const auditSec = async (actor, event, target = "", org = 1, ip = "") =>
-  void (await q("INSERT INTO audit_security(org_id,actor,event,target,ip) VALUES($1,$2,$3,$4,$5)", [org, actor, event, target, ip]));
+const AUDIT_INSERT = "INSERT INTO audit_security(org_id,actor,event,target,ip,detail) VALUES($1,$2,$3,$4,$5,$6)";
+export const auditSec = async (actor, event, target = "", org = 1, ip = "", detail = null) =>
+  void (await q(AUDIT_INSERT, [org, actor, event, target, ip, detail]));
+
+// ---- cambios de acceso con reglas (no sacarte tu admin, Lockatus nunca sin admin) ----
+// Todo cambio de rol o de estado de un usuario pasa por acá: una transacción con un candado
+// (pg_advisory_xact_lock) que serializa los cambios de acceso. Así dos admins que se sacan el
+// acceso al mismo tiempo no pueden dejar a Lockatus sin ningún admin activo: el segundo ve el
+// resultado del primero. `fn` recibe las operaciones atadas a la transacción.
+const CANDADO_ACCESOS = 7245011;
+export async function enTransaccionDeAccesos(fn) {
+  const c = await pool.connect();
+  const tq = (text, params) => c.query(text, params);
+  try {
+    await tq("BEGIN");
+    await tq("SELECT pg_advisory_xact_lock($1)", [CANDADO_ACCESOS]);
+    const r = await fn({
+      apps: async () => (await tq("SELECT slug,name,roles FROM apps ORDER BY name")).rows,
+      // Los usuarios pedidos MÁS todos los admins de Lockatus (para contar los que quedan).
+      usuarios: async (ids, org = 1) => (await tq(`
+        SELECT u.id, u.email, u.name, u.status,
+          COALESCE(jsonb_object_agg(ra.app_slug, ra.role) FILTER (WHERE ra.app_slug IS NOT NULL), '{}'::jsonb) AS roles
+        FROM users u LEFT JOIN role_assignments ra ON ra.user_id=u.id
+        WHERE u.org_id=$2 AND (u.id = ANY($1::int[])
+          OR u.id IN (SELECT user_id FROM role_assignments WHERE app_slug='lockatus' AND role='admin'))
+        GROUP BY u.id`, [ids, org])).rows,
+      asignar: (uid, app, role, by) => tq(
+        `INSERT INTO role_assignments(user_id,app_slug,role,granted_by) VALUES($1,$2,$3,$4)
+         ON CONFLICT(user_id,app_slug) DO UPDATE SET role=excluded.role, granted_by=excluded.granted_by, granted=now()`,
+        [uid, app, role, by]),
+      revocar: (uid, app) => tq("DELETE FROM role_assignments WHERE user_id=$1 AND app_slug=$2", [uid, app]),
+      estado: (uid, status) => tq("UPDATE users SET status=$1 WHERE id=$2", [status, uid]),
+      auditar: (actor, event, target, detail, ip = "", org = 1) => tq(AUDIT_INSERT, [org, actor, event, target, ip, detail]),
+    });
+    await tq("COMMIT");
+    return r;
+  } catch (e) {
+    try { await tq("ROLLBACK"); } catch { /* la conexión ya estaba rota */ }
+    throw e;
+  } finally { c.release(); }
+}
+
+// Historial de una celda de la matriz (usuario × app), de lo más nuevo a lo más viejo. Lee los
+// eventos con detalle y, para los registros viejos (antes de la 0.2.0, sin `detail`), el texto
+// `email@app=rol` / `email@app` con que se guardaban (sin el rol anterior).
+export async function historialDeAcceso(uid, app, email, limite = 25) {
+  const viejo = `${email}@${app}`;
+  const r = await q(`
+    SELECT ts, actor, event, target, detail FROM audit_security
+    WHERE event IN ('asignar_rol','revocar_acceso') AND (
+      (detail IS NOT NULL AND detail->>'uid' = $1::text AND detail->>'app' = $2)
+      OR (detail IS NULL AND (target = $3 OR left(target, length($3) + 1) = $3 || '=')))
+    ORDER BY ts DESC, id DESC LIMIT $4`, [String(uid), app, viejo, limite]);
+  return r.rows.map((x) => x.detail
+    ? { ts: x.ts, actor: x.actor, antes: x.detail.antes ?? null, despues: x.detail.despues ?? null, via: x.detail.via || "" }
+    : { ts: x.ts, actor: x.actor, antes: undefined, despues: x.event === "revocar_acceso" ? null : x.target.slice(viejo.length + 1), via: "" });
+}
+export const asignacion = async (uid, app) =>
+  (await q("SELECT role, granted_by, granted FROM role_assignments WHERE user_id=$1 AND app_slug=$2", [uid, app])).rows[0] || null;
 
 // ---- seed / comisión inicial ----
 export async function seedAdmin() {
@@ -262,5 +324,7 @@ export async function seedAdmin() {
   await setPasswordFactor(id, pass);
   await assignRole(id, "lockatus", "admin", "sistema");
   await auditSec("sistema", "seed_admin", config.adminEmail);
+  await auditSec("sistema", "asignar_rol", `${config.adminEmail}@lockatus=admin`, 1, "",
+    { uid: id, email: config.adminEmail, app: "lockatus", antes: null, despues: "admin", via: "arranque" });
   return config.adminPass ? null : pass; // pass generada → index.js la guarda en un archivo 0600 (nunca al log)
 }

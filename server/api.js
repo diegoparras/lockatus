@@ -9,6 +9,7 @@ import * as db from "./db.js";
 import * as oidc from "./oidc.js";
 import { sendSetupLink, smtpConfigured } from "./mailer.js";
 import * as nov from "./novedades.js";
+import * as acc from "./accesos.js";
 
 function send(res, code, obj, cookie) {
   const h = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
@@ -41,9 +42,23 @@ function setCookie(value, maxAgeSec) {
 async function requireAdmin(req, res) {
   const s = getSession(req);
   if (!s) { send(res, 401, { error: "no autenticado" }); return null; }
+  // Un usuario deshabilitado pierde el panel aunque su cookie siga viva (antes sólo se miraba el rol).
+  const u = await db.getUserById(s.uid);
+  if (!u || u.status !== "active") { send(res, 401, { error: "sesión inválida" }); return null; }
   const roles = await db.rolesDe(s.uid);
   if (roles.lockatus !== "admin") { send(res, 403, { error: "solo admin de Lockatus" }); return null; }
-  return s;
+  return { ...s, email: u.email };
+}
+
+// Los cambios de acceso sólo aceptan JSON: un formulario de otro sitio no puede mandar
+// application/json sin un preflight CORS (que Lockatus no habilita). Suma a la cookie SameSite.
+const esJson = (req) => /^application\/json\b/i.test(req.headers["content-type"] || "");
+
+// Respuesta de un cambio de acceso a partir de los ítems evaluados.
+function resumenCambios(r) {
+  const n = (e) => r.items.filter((i) => i.estado === e).length;
+  return { items: r.items, aplicados: r.aplicados, cambian: n("cambia"), bloqueados: n("bloqueado"),
+    invalidos: n("invalido"), desactualizados: n("desactualizado"), iguales: n("igual") };
 }
 
 // Lockout simple anti-fuerza-bruta, por email, en memoria.
@@ -238,10 +253,29 @@ export async function handle(req, res, path, dbOk) {
   if (seg[0] === "api" && seg[1] === "admin") {
     const s = await requireAdmin(req, res);
     if (!s) return;
-    const actor = (await db.getUserById(s.uid))?.email || "admin";
+    const actor = s.email || "admin";
+    const ip = clientIp(req);
 
     if (path === "/api/admin/matrix" && m === "GET")
-      return send(res, 200, { apps: await db.listApps(), users: await db.listMatrix() });
+      return send(res, 200, { apps: await db.listApps(), users: await db.listMatrix(), me: s.uid });
+
+    // ---- cambios de acceso en bloque (varias celdas de una) ----
+    // POST /api/admin/roles/preview { cambios:[{uid,app,role}] }           → qué cambiaría (no escribe)
+    // POST /api/admin/roles/bulk    { cambios:[{uid,app,role,antes}], confirm:true } → aplica
+    // Mismas reglas que una celda; los bloqueados, inválidos o desactualizados se saltean.
+    if (path === "/api/admin/roles/preview" || path === "/api/admin/roles/bulk") {
+      if (m !== "POST") return send(res, 405, { error: "método no permitido" });
+      if (!esJson(req)) return send(res, 415, { error: "se espera JSON" });
+      const b = await readBody(req);
+      if (!b || !Array.isArray(b.cambios)) return send(res, 400, { error: "cambios debe ser una lista" });
+      if (b.cambios.length > 2000) return send(res, 400, { error: "demasiados cambios de una vez" });
+      const dryRun = path.endsWith("/preview");
+      const r = await acc.aplicarCambios({ actor, actorId: s.uid, cambios: b.cambios, confirm: b.confirm, dryRun,
+        via: "bloque", ip, confirmar: "siempre", lote: dryRun ? null : `bloque-${Date.now()}` });
+      if (r.needConfirm) return send(res, 409, { error: "Revisá los cambios y confirmalos.", need_confirm: true, ...resumenCambios(r) });
+      if (!dryRun && r.aplicados) await db.auditSec(actor, "cambio_en_bloque", `${r.aplicados} accesos`, 1, ip);
+      return send(res, 200, { ok: true, ...resumenCambios(r) });
+    }
 
     if (path === "/api/admin/users" && m === "POST") {
       const b = await readBody(req);
@@ -268,6 +302,8 @@ export async function handle(req, res, path, dbOk) {
       if (!/^[a-z][a-z0-9-]{1,30}$/.test(slug)) return send(res, 400, { error: "slug inválido (a-z, 0-9, '-')" });
       const roles = Array.isArray(b.roles) ? b.roles.map((r) => String(r).trim()).filter(Boolean) : [];
       if (!roles.length) return send(res, 400, { error: "roles: lista no vacía de los roles que declara la app" });
+      // El hub entiende un solo rol, "admin": sacarlo del catálogo dejaría a todos sin panel.
+      if (slug === acc.HUB && !roles.includes(acc.ROL_HUB)) return send(res, 400, { error: "Lockatus tiene que conservar el rol admin." });
       const name = String(b.name || slug);
       const redirects = Array.isArray(b.redirect_uris) ? b.redirect_uris.map(String) : [];
       await db.ensureApp(slug, name, roles, redirects);
@@ -309,24 +345,56 @@ export async function handle(req, res, path, dbOk) {
       const target = await db.getUserById(id);
       if (!target) return send(res, 404, { error: "usuario no encontrado" });
 
+      // Cambio de una celda. Un rol ALTO pide confirm:true (si no, 409 + need_confirm).
+      // `antes` (opcional) es el rol que vio el panel: si cambió mientras tanto, 409.
       if (seg[4] === "role" && m === "PUT") {
+        if (!esJson(req)) return send(res, 415, { error: "se espera JSON" });
         const b = await readBody(req);
         if (!b) return send(res, 400, { error: "JSON inválido" });
-        const app = String(b.app || "");
-        const appDef = (await db.listApps()).find((a) => a.slug === app);
-        if (!appDef) return send(res, 400, { error: "app desconocida" });
-        if (!b.role) { await db.revokeRole(id, app); await db.auditSec(actor, "revocar_acceso", `${target.email}@${app}`); return send(res, 200, { ok: true, role: null }); }
-        if (!appDef.roles.includes(b.role)) return send(res, 400, { error: "rol no declarado por la app" });
-        await db.assignRole(id, app, b.role, actor);
-        await db.auditSec(actor, "asignar_rol", `${target.email}@${app}=${b.role}`);
-        return send(res, 200, { ok: true, role: b.role });
+        const cambio = { uid: id, app: String(b.app || ""), role: b.role ? String(b.role) : null };
+        if (b.antes !== undefined) cambio.antes = b.antes;
+        const r = await acc.aplicarCambios({ actor, actorId: s.uid, cambios: [cambio], confirm: b.confirm, via: b.via, ip });
+        const it = r.items[0];
+        if (it.estado === "invalido") return send(res, 400, { error: it.motivo });
+        if (it.estado === "bloqueado") return send(res, it.motivo === acc.MSJ.propio ? 403 : 409, { error: it.motivo, bloqueado: true });
+        if (it.estado === "desactualizado") return send(res, 409, { error: it.motivo, desactualizado: true, actual: it.antes });
+        if (r.needConfirm) return send(res, 409, { error: acc.MSJ.confirmar, need_confirm: true, antes: it.antes, role: it.despues });
+        return send(res, 200, { ok: true, role: it.despues, antes: it.antes });
       }
 
+      // Historial de una celda (quién cambió ese acceso y cuándo). Solo lectura.
+      if (seg[4] === "history" && m === "GET") {
+        const app = new URL(req.url, "http://x").searchParams.get("app") || "";
+        if (!(await db.getApp(app))) return send(res, 400, { error: "app desconocida" });
+        const [actual, eventos] = [await db.asignacion(id, app), await db.historialDeAcceso(id, app, target.email)];
+        return send(res, 200, { ok: true, uid: id, app, actual, eventos });
+      }
+
+      // Copiar los accesos de otra persona: POST { from, conservar?, dry_run?, confirm? }.
+      // conservar=true sólo suma (no saca lo que el destino tiene y el origen no).
+      if (seg[4] === "copy-from" && m === "POST") {
+        if (!esJson(req)) return send(res, 415, { error: "se espera JSON" });
+        const b = await readBody(req);
+        if (!b) return send(res, 400, { error: "JSON inválido" });
+        const from = Number(b.from);
+        if (from === id) return send(res, 400, { error: "elegí otra persona" });
+        const origen = await db.getUserById(from);
+        if (!origen) return send(res, 404, { error: "la persona de origen no existe" });
+        const apps = await db.listApps();
+        const cambios = acc.cambiosDeCopia({ origen: { roles: await db.rolesDe(from) }, destino: { id, roles: await db.rolesDe(id) }, apps, conservar: !!b.conservar });
+        const r = await acc.aplicarCambios({ actor, actorId: s.uid, cambios, confirm: b.confirm, dryRun: !!b.dry_run,
+          via: "copia", ip, confirmar: "siempre", lote: b.dry_run ? null : `copia-${from}-${id}-${Date.now()}` });
+        if (r.needConfirm) return send(res, 409, { error: "Revisá los cambios y confirmalos.", need_confirm: true, ...resumenCambios(r) });
+        if (!b.dry_run && r.aplicados) await db.auditSec(actor, "copiar_accesos", `${origen.email} -> ${target.email} (${r.aplicados})`, 1, ip);
+        return send(res, 200, { ok: true, ...resumenCambios(r) });
+      }
+
+      // Habilitar / deshabilitar. No te podés deshabilitar ni dejar a Lockatus sin admin activo.
       if (seg[4] === "status" && m === "PUT") {
         const b = await readBody(req);
         const status = b?.status === "active" ? "active" : "disabled";
-        await db.setUserStatus(id, status);
-        await db.auditSec(actor, "estado_usuario", `${target.email}=${status}`);
+        const r = await acc.cambiarEstado({ actor, actorId: s.uid, uid: id, status, ip });
+        if (r.error) return send(res, r.code || 409, { error: r.error });
         return send(res, 200, { ok: true, status });
       }
 
