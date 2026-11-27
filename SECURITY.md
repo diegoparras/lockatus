@@ -16,6 +16,15 @@ prioridad de diseño. Si encontrás una vulnerabilidad, reportala en privado a
 - **Sesión del hub** como cookie firmada HMAC, `HttpOnly`, `SameSite`, `Secure` detrás de TLS.
 - **Queries 100% parametrizadas** (`pg`, sin concatenación SQL).
 - Contenedor como **usuario no-root**.
+- **Reglas de accesos en el servidor** (`server/accesos.js`): nadie se saca su propio admin de
+  Lockatus ni se deshabilita; Lockatus nunca queda sin un admin activo (los cambios de acceso
+  corren en una transacción con `pg_advisory_xact_lock`, así dos cambios simultáneos no lo dejan
+  sin admin); dar un rol alto exige `confirm: true`; un admin deshabilitado pierde el panel aunque
+  su cookie siga viva. Los cambios de acceso sólo aceptan `application/json` (un formulario de
+  otro sitio no puede mandarlo sin un preflight CORS, que Lockatus no habilita), además de la
+  cookie `SameSite=Lax`.
+- **Auditoría de accesos con detalle**: cada cambio de rol guarda en `audit_security.detail`
+  quién, a quién, en qué app, el rol anterior y el nuevo, y desde dónde. Sin secretos.
 
 ## Pendiente (en construcción)
 

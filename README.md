@@ -64,6 +64,7 @@ usuarios externa. Pasos:
 1. **Registrar la app**: en el panel (o por API) cargá su `redirect_uri` en el catálogo. Las apps
    de la suite ya vienen sembradas con su catálogo de roles.
 2. **Asignar accesos**: en la matriz, dale a cada persona su rol en esa app (sin rol = sin acceso).
+   Ver [Accesos](#accesos-la-matriz) más abajo.
 3. **En la app (Node)**: usá el cliente [`client/lockatus-client.mjs`](client/lockatus-client.mjs) —
    `beginLogin` / `handleCallback` / `getUser` / `logout`. El `getUser(req).role` viene del token;
    tu app aplica ese rol con su lógica. Todo detrás de un flag (`AUTH_MODE=local|federado`,
@@ -72,6 +73,37 @@ usuarios externa. Pasos:
 Ejemplo completo y corrible: [`examples/demo-app/server.mjs`](examples/demo-app/server.mjs)
 (`npm run demo`, con Lockatus arriba). El flujo es OIDC estándar (Authorization Code + PKCE), así
 que cualquier cliente OIDC sirve — y las apps quedan listas para apuntar a otro IdP si hiciera falta.
+
+## Accesos (la matriz)
+
+La pantalla principal del admin es la matriz **personas × apps → rol**:
+
+- **Columna de personas y encabezado fijos**; flechas a los costados cuando hay más apps; la fila,
+  la columna y el encabezado de la celda bajo el mouse (o con el foco) se iluminan.
+- **Teclado**: la matriz es una grilla con una sola parada de Tab. Flechas para moverse,
+  Inicio/Fin, RePág/AvPág, Enter (o F2, Alt+↓) abre la lista de roles; `/` va al buscador.
+- **Color por nivel** del rol dentro de su app (alto, intermedio, básico; "—" es sin acceso). El
+  nivel sale de [`src/niveles.js`](src/niveles.js): primero palabras conocidas (superadmin, admin,
+  dueño, dios… altos; lectura, lector, humano, usuario, auditor… básicos) y, si el catálogo no
+  tiene ninguna, el orden en que la app declara sus roles (del más alto al más bajo).
+- **Buscador** (nombre o email) y **filtro de apps** (se recuerda en el navegador).
+- Cada cambio **se guarda al momento** con un indicador en la celda y un aviso con **Deshacer**.
+  Dar un **rol alto** pide confirmación. Nadie se puede sacar su propio admin de Lockatus ni
+  dejarlo sin admin activo (lo valida el servidor).
+- **Historial de la celda** (quién cambió ese acceso y cuándo) al apoyar el mouse o desde la
+  lista de roles. Sale de la auditoría de seguridad.
+- **Cambios en bloque**: elegir varias personas y darles un rol, o **copiar los accesos** de una
+  persona a otra (menú "…" de la fila). Los dos muestran una vista previa y piden confirmación.
+
+API del panel (sesión de admin, JSON):
+
+| Ruta | Para qué |
+|---|---|
+| `PUT /api/admin/users/:id/role` `{app, role, confirm?, antes?}` | cambiar una celda (rol vacío = sin acceso). Un rol alto sin `confirm: true` → 409 `need_confirm`; `antes` distinto del actual → 409 `desactualizado` |
+| `GET /api/admin/users/:id/history?app=` | historial de la celda (solo lectura) |
+| `POST /api/admin/roles/preview` `{cambios:[{uid,app,role}]}` | qué cambiaría (no escribe) |
+| `POST /api/admin/roles/bulk` `{cambios:[{uid,app,role,antes}], confirm: true}` | aplicar varios cambios |
+| `POST /api/admin/users/:id/copy-from` `{from, conservar?, dry_run?, confirm?, esperado?}` | copiar los accesos de otra persona |
 
 ## Stack
 

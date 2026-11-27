@@ -7,7 +7,10 @@ el cliente OIDC en la app**.
 
 ## 1. Declarar la app en el hub
 
-La app declara su **slug** y su **catálogo de roles** (los roles que ella entiende). Dos formas:
+La app declara su **slug** y su **catálogo de roles** (los roles que ella entiende), **del más
+alto al más bajo**: si sus nombres no son palabras conocidas (admin, dueño, lector…), la matriz
+usa ese orden para el color de cada rol y para saber cuál es el rol alto (ver `src/niveles.js`).
+Dos formas:
 
 - **En caliente, sin redeploy** (recomendado para apps nuevas) — endpoint admin:
   ```
@@ -25,7 +28,8 @@ Después:
   EXACTO con el que manda la app: `PUT /api/admin/apps/<slug>/redirect-uris { "redirect_uris": [...] }`.
 - **Asignar roles** a los usuarios en la matriz (pantalla de accesos del admin, o
   `PUT /api/admin/users/<id>/role { "app": "<slug>", "role": "<rol>" }`). Sin rol para esa app,
-  el usuario recibe `access_denied` al intentar entrar (gating por la matriz).
+  el usuario recibe `access_denied` al intentar entrar (gating por la matriz). Un **rol alto**
+  (el más alto de la app o cualquiera que contenga "admin") pide `"confirm": true`; sin eso, 409.
 
 > El script `scripts/seed-suite.mjs` hace los dos últimos pasos para todas las apps de la suite
 > de una (útil para el `docker-compose.suite.yml`).
