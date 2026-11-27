@@ -271,7 +271,7 @@ export async function handle(req, res, path, dbOk) {
       if (b.cambios.length > 2000) return send(res, 400, { error: "demasiados cambios de una vez" });
       const dryRun = path.endsWith("/preview");
       const r = await acc.aplicarCambios({ actor, actorId: s.uid, cambios: b.cambios, confirm: b.confirm, dryRun,
-        via: "bloque", ip, confirmar: "siempre", lote: dryRun ? null : `bloque-${Date.now()}` });
+        via: b.via === "deshacer" ? "deshacer" : "bloque", ip, confirmar: "siempre", lote: dryRun ? null : `bloque-${Date.now()}` });
       if (r.needConfirm) return send(res, 409, { error: "Revisá los cambios y confirmalos.", need_confirm: true, ...resumenCambios(r) });
       if (!dryRun && r.aplicados) await db.auditSec(actor, "cambio_en_bloque", `${r.aplicados} accesos`, 1, ip);
       return send(res, 200, { ok: true, ...resumenCambios(r) });
@@ -383,7 +383,9 @@ export async function handle(req, res, path, dbOk) {
         const apps = await db.listApps();
         const cambios = acc.cambiosDeCopia({ origen: { roles: await db.rolesDe(from) }, destino: { id, roles: await db.rolesDe(id) }, apps, conservar: !!b.conservar });
         const r = await acc.aplicarCambios({ actor, actorId: s.uid, cambios, confirm: b.confirm, dryRun: !!b.dry_run,
-          via: "copia", ip, confirmar: "siempre", lote: b.dry_run ? null : `copia-${from}-${id}-${Date.now()}` });
+          via: "copia", ip, confirmar: "siempre", lote: b.dry_run ? null : `copia-${from}-${id}-${Date.now()}`,
+          esperado: Array.isArray(b.esperado) ? b.esperado : null });
+        if (r.desfasado) return send(res, 409, { error: "Los accesos cambiaron mientras tanto: revisá la vista previa de nuevo.", desfasado: true, ...resumenCambios(r) });
         if (r.needConfirm) return send(res, 409, { error: "Revisá los cambios y confirmalos.", need_confirm: true, ...resumenCambios(r) });
         if (!b.dry_run && r.aplicados) await db.auditSec(actor, "copiar_accesos", `${origen.email} -> ${target.email} (${r.aplicados})`, 1, ip);
         return send(res, 200, { ok: true, ...resumenCambios(r) });

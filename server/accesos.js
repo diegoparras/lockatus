@@ -95,13 +95,21 @@ export function evaluarEstado({ actorId, uid, status, usuarios }) {
  * siempre (cambios en bloque y copias, que el panel muestra antes en una vista previa).
  * Devuelve { items, aplicados, needConfirm }.
  */
-export async function aplicarCambios({ actor, actorId, cambios, confirm, dryRun, via, ip = "", confirmar = "alto", lote = null }) {
+export async function aplicarCambios({ actor, actorId, cambios, confirm, dryRun, via, ip = "", confirmar = "alto", lote = null, esperado = null }) {
   return db.enTransaccionDeAccesos(async (tx) => {
     const ids = [...new Set((cambios || []).map((c) => Number(c?.uid)).filter(Number.isInteger))];
     const [apps, usuarios] = [await tx.apps(), await tx.usuarios(ids)];
     const items = evaluarCambios({ actorId, cambios, apps, usuarios });
     const aAplicar = items.filter((i) => i.estado === "cambia");
     if (dryRun) return { items, aplicados: 0, needConfirm: false };
+    // `esperado` = lo que el admin vio en la vista previa ([{app, role}] de un mismo usuario): si
+    // lo que se aplicaría ahora es otra cosa (alguien cambió algo en el medio), no se aplica nada.
+    if (Array.isArray(esperado)) {
+      const k = (app, role) => `${app}=${role || ""}`;
+      const vio = new Set(esperado.map((e) => k(String(e?.app ?? ""), e?.role)));
+      const hoy = new Set(aAplicar.map((i) => k(i.app, i.despues)));
+      if (vio.size !== hoy.size || [...vio].some((x) => !hoy.has(x))) return { items, aplicados: 0, needConfirm: false, desfasado: true };
+    }
     const pideConfirm = aAplicar.length > 0 && (confirmar === "siempre" || aAplicar.some((i) => i.alto));
     if (pideConfirm && confirm !== true) return { items, aplicados: 0, needConfirm: true };
     const v = viaValida(via);

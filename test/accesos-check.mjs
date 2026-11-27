@@ -77,7 +77,9 @@ check("historial de una app desconocida → 400", r.status === 400);
 
 // ---- X entra como admin; deshabilitado pierde el panel ----
 const xs = client();
-await xs("POST", "/api/set-password", { token: tokenOf(X.link), password: "Clave-de-X-123" });
+// IP propia para no chocar con el rate-limit por IP que agota setup-link-check en la misma corrida.
+r = await xs("POST", "/api/set-password", { token: tokenOf(X.link), password: "Clave-de-X-123" }, { "X-Forwarded-For": `10.77.${tag.length}.${parseInt(tag.slice(0, 2), 16)}` });
+check("X define su clave por el link y queda con sesión", r.status === 200);
 r = await xs("GET", `/api/admin/users/${X.id}/history?app=lockatus`);
 check("otro admin puede leer el historial", r.status === 200 && r.data.eventos[0].despues === "admin");
 r = await xs("PUT", `/api/admin/users/${X.id}/role`, { app: "lockatus", role: "" });
