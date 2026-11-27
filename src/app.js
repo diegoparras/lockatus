@@ -1,4 +1,6 @@
-// app.js — front del hub: login (password + 2FA) y el panel de accesos (la matriz quién×sistema→rol).
+// app.js — front del hub: login (password + 2FA) y el panel de accesos (la matriz quién×sistema→rol,
+// que vive en accesos.js).
+import { viewAccesos } from "/accesos.js";
 const app = document.getElementById("app");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const initials = (s) => (s || "?").trim().split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
@@ -9,12 +11,36 @@ async function api(method, path, body) {
   return { status: r.status, ok: r.ok, data };
 }
 
-function toast(msg, bad) {
+// Avisos abajo al centro, apilados. Con `accion` ({texto, fn}) suman un botón (p. ej. Deshacer)
+// y duran más; el tiempo se frena mientras el mouse o el foco están encima.
+function toast(msg, bad, accion) {
+  let box = document.getElementById("toasts");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "toasts"; box.className = "toasts";
+    document.body.appendChild(box);
+  }
   const t = document.createElement("div");
   t.className = "toast" + (bad ? " bad" : "");
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2600);
+  t.setAttribute("role", bad ? "alert" : "status");
+  const txt = document.createElement("span");
+  txt.textContent = msg;
+  t.appendChild(txt);
+  if (accion) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "toast-accion"; b.textContent = accion.texto;
+    b.onclick = () => { t.remove(); accion.fn(); };
+    t.appendChild(b);
+  }
+  while (box.children.length >= 3) box.firstElementChild.remove();
+  box.appendChild(t);
+  const dura = accion ? 9000 : 2600;
+  let timer = setTimeout(() => t.remove(), dura);
+  const frenar = () => clearTimeout(timer);
+  const seguir = () => { clearTimeout(timer); timer = setTimeout(() => t.remove(), 2500); };
+  t.addEventListener("mouseenter", frenar); t.addEventListener("focusin", frenar);
+  t.addEventListener("mouseleave", seguir); t.addEventListener("focusout", seguir);
+  return t;
 }
 
 // Modal que muestra el LINK de alta/reset con botón copiar (y, si se mandó por email, el aviso).
@@ -98,15 +124,6 @@ function closeMenu() {
   const b = document.getElementById("btn-menu");
   if (b) b.setAttribute("aria-expanded", "false");
 }
-// Cierra los menús "…" por fila de la matriz (excepto, opcionalmente, uno).
-function closeRowMenus(except) {
-  document.querySelectorAll(".rowmenu-pop").forEach((p) => {
-    if (p === except) return;
-    p.classList.add("hidden");
-    const b = p.parentElement.querySelector(".rowmenu-btn");
-    if (b) b.setAttribute("aria-expanded", "false");
-  });
-}
 function openMenu() {
   show(hdrMenu);
   const b = document.getElementById("btn-menu");
@@ -168,14 +185,12 @@ async function novedadesTodas() {
     hdrMenu.classList.contains("hidden") ? openMenu() : closeMenu();
   });
   document.addEventListener("click", (e) => {
-    if (!e.target.closest(".rowmenu")) closeRowMenus(null);
     if (!hdrMenu || hdrMenu.classList.contains("hidden")) return;
     if (!e.target.closest("#hdr-menu-wrap")) closeMenu();
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     closeMenu();
-    closeRowMenus(null);
     hide(acercaModal);
     hide(novModal);
   });
@@ -298,164 +313,16 @@ async function openAppEditor(slug) {
   back.querySelector("#ea-name").focus();
 }
 
-// ---------- matriz de accesos ----------
+// ---------- matriz de accesos (accesos.js) ----------
 async function viewMatrix() {
-  const r = await api("GET", "/api/admin/matrix");
-  if (!r.ok) return viewLogin();
-  const { apps, users } = r.data;
-
   // Identidad en el menú del topbar (quién está logueado).
   const me = await api("GET", "/api/me");
+  if (!me.ok || !me.data.admin) return boot();
   const ui = document.getElementById("user-info");
-  if (ui && me.ok) ui.textContent = `${me.data.user.email} · Admin`;
+  if (ui) ui.textContent = `${me.data.user.email} · Admin`;
   chrome(true);
   setTimeout(avisarNovedades, 400);
-
-  // Icono de 2FA (sobrio, sin emoji): candado-check para activo, guion para inactivo.
-  const TFA_ON_SVG = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8.5" width="12" height="8" rx="1.5"/><path d="M6.5 8.5V6a3.5 3.5 0 0 1 7 0v2.5"/><path d="M8.2 12.4l1.4 1.4 2.4-2.6"/></svg>`;
-  const tfaBadge = (u) => u.totp
-    ? `<span class="tfa-badge on" title="2FA activo">${TFA_ON_SVG}<span>2FA</span></span>`
-    : `<span class="tfa-badge off" title="Sin 2FA">2FA <span class="dash">—</span></span>`;
-
-  // <select> de rol canónico, reutilizado por la tabla y por las tarjetas.
-  const roleSelect = (u, a) => {
-    const cur = u.roles[a.slug] || "";
-    const opts = `<option value="">— Sin acceso</option>` + a.roles.map((ro) => `<option value="${esc(ro)}" ${ro === cur ? "selected" : ""}>${esc(ro)}</option>`).join("");
-    return `<select class="role" data-uid="${u.id}" data-app="${esc(a.slug)}" aria-label="Rol en ${esc(a.name)}" ${cur ? 'data-has="1"' : ""}>${opts}</select>`;
-  };
-
-  // Menú "…" por fila con las acciones (Reset pass / Habilitar-Deshabilitar / Reset 2FA).
-  const rowMenu = (u) => `
-    <div class="rowmenu">
-      <button class="icon-btn rowmenu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Acciones del usuario" title="Acciones">
-        <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="16" cy="10" r="1.6"/></svg>
-      </button>
-      <div class="rowmenu-pop menu hidden">
-        <button class="menu-item" type="button" data-act="resetpw" data-uid="${u.id}">Reset contraseña</button>
-        <button class="menu-item" type="button" data-act="status" data-uid="${u.id}" data-status="${u.status}">${u.status === "active" ? "Deshabilitar usuario" : "Habilitar usuario"}</button>
-        ${u.totp ? `<button class="menu-item" type="button" data-act="reset" data-uid="${u.id}">Reset 2FA</button>` : ""}
-      </div>
-    </div>`;
-
-  const userCell = (u) => `<div class="ucell"><span class="av">${esc(initials(u.name || u.email))}</span>
-    <span class="uinfo"><b>${esc(u.name || u.email.split("@")[0])}</b><span class="email">${esc(u.email)}${u.status !== "active" ? " · deshabilitado" : ""}</span></span></div>`;
-
-  // ---- Tabla (pantallas anchas): 1.ª columna Usuario sticky + scroll-x suave si hace falta ----
-  const head = `<th class="u">Usuario</th><th class="c-tfa">2FA</th>${apps.map((a) => `<th><button type="button" class="appcol" data-app="${esc(a.slug)}" title="Editar app">${esc(a.name)}</button></th>`).join("")}<th class="c-acc" aria-label="Acciones"></th>`;
-  const tRow = (u) => `
-    <tr class="${u.status !== "active" ? "off" : ""}">
-      <td class="u">${userCell(u)}</td>
-      <td class="tfa c-tfa">${tfaBadge(u)}</td>
-      ${apps.map((a) => `<td>${roleSelect(u, a)}</td>`).join("")}
-      <td class="acc c-acc">${rowMenu(u)}</td>
-    </tr>`;
-
-  // ---- Tarjetas (pantallas angostas): una card por usuario, app→rol apilada ----
-  const card = (u) => `
-    <article class="ucard ${u.status !== "active" ? "off" : ""}">
-      <header class="ucard-head">
-        ${userCell(u)}
-        <div class="ucard-meta">${tfaBadge(u)}${rowMenu(u)}</div>
-      </header>
-      <div class="ucard-roles">
-        ${apps.map((a) => `<div class="rolerow"><span class="rolerow-app">${esc(a.name)}</span>${roleSelect(u, a)}</div>`).join("")}
-      </div>
-    </article>`;
-
-  const empty = !users.length ? `<div class="matrix-empty">Todavía no hay usuarios. Creá el primero con “+ Usuario”.</div>` : "";
-
-  app.innerHTML = `
-    <div class="panel">
-      <div class="matrix-head">
-        <div><div class="crumb">Lockatus · Admin</div><h2>Accesos</h2></div>
-        <div class="actions"><button id="nuevo">+ Usuario</button><button id="nuevoapp" class="ghost">+ App</button></div>
-      </div>
-      <form id="newuser" class="newuser" style="display:none">
-        <input id="nu-email" type="email" placeholder="correo@org.com" required />
-        <input id="nu-name" placeholder="Nombre (opcional)" />
-        <button type="submit">Crear</button>
-      </form>
-      <form id="newapp" class="newuser" style="display:none">
-        <input id="na-slug" placeholder="slug (ej. trustux)" autocomplete="off" required />
-        <input id="na-name" placeholder="Nombre visible (opcional)" />
-        <input id="na-roles" placeholder="roles separados por coma (ej. admin, editor, lector)" required />
-        <input id="na-redirect" placeholder="redirect_uri (opcional, ej. https://miapp/callback)" />
-        <button type="submit">Agregar app</button>
-      </form>
-      ${empty}
-      <div class="tablewrap"><table class="matrix"><thead><tr>${head}</tr></thead><tbody>${users.map(tRow).join("")}</tbody></table></div>
-      <div class="cards">${users.map(card).join("")}</div>
-    </div>`;
-
-  document.getElementById("nuevo").onclick = () => { const f = document.getElementById("newuser"); f.style.display = f.style.display === "none" ? "flex" : "none"; };
-  document.getElementById("newuser").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const email = document.getElementById("nu-email").value.trim();
-    const r2 = await api("POST", "/api/admin/users", { email, name: document.getElementById("nu-name").value });
-    if (!r2.ok) return toast(r2.data.error || "No se pudo crear", true);
-    showLinkDialog("Usuario creado", r2.data.link, r2.data.emailed, email);
-    viewMatrix();
-  });
-
-  // Alta de una app NUEVA de la familia (onboarding desde la propia matriz, sin tocar código).
-  document.getElementById("nuevoapp").onclick = () => { const f = document.getElementById("newapp"); f.style.display = f.style.display === "none" ? "flex" : "none"; };
-  document.getElementById("newapp").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const slug = document.getElementById("na-slug").value.trim().toLowerCase();
-    const roles = document.getElementById("na-roles").value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
-    const name = document.getElementById("na-name").value.trim() || slug;
-    const redirect = document.getElementById("na-redirect").value.trim();
-    const redirect_uris = redirect ? redirect.split(/[\s,]+/).filter(Boolean) : [];
-    const ra = await api("PUT", `/api/admin/apps/${slug}`, { name, roles, redirect_uris });
-    if (!ra.ok) return toast(ra.data.error || "No se pudo agregar la app", true);
-    toast(`App agregada: ${slug} (${roles.join(", ")})`);
-    viewMatrix();
-  });
-
-  // Click en el nombre de una app (encabezado de columna) → editor de la app.
-  app.querySelectorAll(".appcol").forEach((b) => (b.onclick = () => openAppEditor(b.dataset.app)));
-
-  app.querySelectorAll("select.role").forEach((sel) => sel.addEventListener("change", async () => {
-    const r3 = await api("PUT", `/api/admin/users/${sel.dataset.uid}/role`, { app: sel.dataset.app, role: sel.value });
-    if (!r3.ok) { toast(r3.data.error || "No se pudo guardar", true); return; }
-    // Mantener en sincronía la otra copia del select (tabla ↔ tarjeta) del mismo usuario·app.
-    app.querySelectorAll(`select.role[data-uid="${sel.dataset.uid}"][data-app="${sel.dataset.app}"]`).forEach((tw) => {
-      if (tw !== sel) tw.value = sel.value;
-      sel.value ? tw.setAttribute("data-has", "1") : tw.removeAttribute("data-has");
-    });
-    toast(sel.value ? `Rol asignado: ${sel.value}` : "Acceso revocado");
-  }));
-
-  // Menús "…" por fila (uno por copia tabla/tarjeta). Abren/cierran como el kebab del topbar.
-  app.querySelectorAll(".rowmenu-btn").forEach((btn) => btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const pop = btn.parentElement.querySelector(".rowmenu-pop");
-    const willOpen = pop.classList.contains("hidden");
-    closeRowMenus(willOpen ? pop : null);
-    pop.classList.toggle("hidden", !willOpen);
-    btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
-  }));
-
-  app.querySelectorAll("button[data-act]").forEach((btn) => btn.onclick = async () => {
-    closeRowMenus(null);
-    const uid = btn.dataset.uid, act = btn.dataset.act;
-    if (act === "status") {
-      const next = btn.dataset.status === "active" ? "disabled" : "active";
-      const r4 = await api("PUT", `/api/admin/users/${uid}/status`, { status: next });
-      if (!r4.ok) return toast(r4.data.error || "Error", true);
-    } else if (act === "resetpw") {
-      const r6 = await api("POST", `/api/admin/users/${uid}/reset-password`);
-      if (!r6.ok) return toast(r6.data.error || "Error", true);
-      const email = (users.find((x) => String(x.id) === String(uid)) || {}).email || "";
-      showLinkDialog("Restablecer contraseña", r6.data.link, r6.data.emailed, email);
-      return;
-    } else {
-      const r5 = await api("POST", `/api/admin/users/${uid}/reset-2fa`);
-      if (!r5.ok) return toast(r5.data.error || "Error", true);
-      toast("2FA reseteado");
-    }
-    viewMatrix();
-  });
+  return viewAccesos({ root: app, api, toast, esc, initials, openAppEditor, showLinkDialog, recargar: viewMatrix, salir: viewLogin });
 }
 
 // ---------- 2FA del propio usuario ----------

@@ -24,7 +24,7 @@
 :root[data-theme="dark"] { --accent: #9c86d6; --accent-2: #6c4fb3; --ring: 0 0 0 3px rgba(156,134,214,.26); }
 
 /* ---- Layout de la matriz (vista logueada) --------------------------------- */
-.panel { max-width: 1000px; margin: 0 auto; padding: 24px 20px; }
+.panel { max-width: 1240px; margin: 0 auto; padding: 24px 20px; }
 .matrix-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .crumb { color: var(--muted); font-size: 13px; }
 .matrix-head h2 { margin: 2px 0 0; font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
@@ -35,76 +35,330 @@
 .newuser input { flex: 1; min-width: 140px; }
 
 /* ===========================================================================
-   MATRIZ DE ACCESOS (quién × app → rol)
+   MATRIZ DE ACCESOS (quién × app → rol) — accesos.js
    Dos presentaciones de los mismos datos:
-     · ANCHO  → tabla con 1.ª columna "Usuario" STICKY + scroll-x suave si hace falta.
-     · ANGOSTO → una tarjeta por usuario con la lista app→rol apilada.
-   El JS renderiza ambas; el media query muestra solo la que corresponde.
+     · ANCHO  → tabla con la columna "Persona" y el encabezado FIJOS, flechas a
+       los costados, fila y columna iluminadas y navegación de grilla.
+     · ANGOSTO → una tarjeta por persona con la lista app→rol apilada.
+   REGLA de las celdas fijas: su fondo es SIEMPRE opaco (var(--panel) o una
+   mezcla con var(--panel)). --card/--card-2 son transparentes: si una celda
+   fija los usa, lo que se desplaza por debajo se ve a través ("rastros").
    =========================================================================== */
+
+/* Tonos de la matriz y de los niveles de rol, siempre mezclados con --panel (opacos). */
+:root {
+  --mx-uw: 284px;                                  /* ancho de la columna Persona */
+  --mx-hl: color-mix(in srgb, var(--accent) 6%, var(--panel));
+  --mx-hl-2: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  --mx-sombra: 10px 0 14px -10px rgba(15,15,20,.30);
+  --n3-bg: color-mix(in srgb, var(--accent) 15%, var(--panel));
+  --n3-bd: color-mix(in srgb, var(--accent) 62%, var(--panel));
+  --n3-tx: var(--accent-2);
+  --n2-bg: color-mix(in srgb, var(--accent) 6%, var(--panel));
+  --n2-bd: color-mix(in srgb, var(--accent) 32%, var(--panel));
+  --n2-tx: var(--text);
+  --n1-bg: var(--panel);
+  --n1-bd: var(--border);
+  --n1-tx: var(--muted-2);
+}
+:root[data-theme="dark"] {
+  --mx-hl: color-mix(in srgb, var(--accent) 9%, var(--panel));
+  --mx-hl-2: color-mix(in srgb, var(--accent) 17%, var(--panel));
+  --mx-sombra: 12px 0 16px -10px rgba(0,0,0,.75);
+  --n3-bg: color-mix(in srgb, var(--accent) 24%, var(--panel));
+  --n3-bd: color-mix(in srgb, var(--accent) 72%, var(--panel));
+  --n3-tx: #ece6ff;
+  --n2-bg: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  --n2-bd: color-mix(in srgb, var(--accent) 38%, var(--panel));
+}
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---- Herramientas: buscador, filtro de apps y leyenda ---------------------- */
+.mx-tools { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.mx-tools .sp { flex: 1; }
+.mx-search { position: relative; display: flex; align-items: center; flex: 0 1 340px; min-width: 200px; color: var(--muted); }
+.mx-search svg { position: absolute; left: 11px; pointer-events: none; }
+.mx-search input { width: 100%; padding-left: 34px; padding-right: 64px; background: var(--panel); }
+.mx-search input::-webkit-search-cancel-button { cursor: pointer; }
+.mx-q-n { position: absolute; right: 30px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
+button.mx-filtro { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; font-weight: 600; background: var(--panel); }
+button.mx-filtro:hover { background: var(--panel); border-color: var(--accent); }
+.mx-filtro-n { font-size: 11.5px; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.mx-leyenda { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mx-leyenda-t { font-size: 12px; color: var(--muted); margin-left: -2px; }
+
+/* ---- Chip de rol (leyenda, vista previa, historial) ------------------------ */
+.nchip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--n1-bd); background: var(--n1-bg); color: var(--n1-tx); white-space: nowrap; vertical-align: middle; }
+.nchip[data-n="2"] { border-color: var(--n2-bd); background: var(--n2-bg); color: var(--n2-tx); }
+.nchip[data-n="3"] { border-color: var(--n3-bd); background: var(--n3-bg); color: var(--n3-tx); font-weight: 600; }
+.nchip[data-n="0"] { border-style: dashed; border-color: var(--border); background: transparent; color: var(--muted); }
+
+/* Barritas de nivel (1, 2 o 3 llenas): el nivel no depende sólo del color. */
+.rc-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; flex: 0 0 auto; }
+.rc-bars i { width: 3px; border-radius: 1px; background: var(--accent); opacity: .2; }
+.rc-bars i:nth-child(1) { height: 5px; } .rc-bars i:nth-child(2) { height: 8px; } .rc-bars i:nth-child(3) { height: 12px; }
+[data-n="1"] > .rc-bars i:nth-child(1),
+[data-n="2"] > .rc-bars i:nth-child(-n+2),
+[data-n="3"] > .rc-bars i { opacity: 1; }
+[data-n="1"] > .rc-bars i:nth-child(1) { opacity: .55; }
+
+/* ---- Barra de cambio en bloque --------------------------------------------- */
+.mx-bulk { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 12px 10px 14px;
+  border: 1px solid var(--n3-bd); background: var(--mx-hl); border-radius: 12px; font-size: 13px; }
+.mx-bulk b { color: var(--n3-tx); font-weight: 600; }
+.mx-bulk-campos { display: flex; gap: 10px; flex-wrap: wrap; flex: 1; }
+.mx-bulk label { display: inline-flex; align-items: center; gap: 7px; color: var(--muted-2); }
+.mx-bulk select { padding: 6px 30px 6px 10px; font-size: 13px; background-color: var(--panel); }
+
+/* ---- Marco de la tabla: flechas y degradés --------------------------------- */
+.mx-frame { position: relative; }
+.mx-frame::before, .mx-frame::after { content: ""; position: absolute; top: 1px; bottom: 1px; width: 48px; z-index: 1;
+  pointer-events: none; opacity: 0; transition: opacity .2s; }
+.mx-frame::before { left: calc(var(--mx-stickyw, var(--mx-uw)) + 1px); background: linear-gradient(to right, var(--panel), transparent); }
+.mx-frame::after { right: 1px; border-radius: 0 11px 11px 0; background: linear-gradient(to left, var(--panel), transparent); }
+.mx-frame.can-izq::before, .mx-frame.can-der::after { opacity: 1; }
+button.mx-flecha { position: absolute; z-index: 2; top: 0; bottom: 0; margin: auto 0; width: 36px; height: 36px; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; background: var(--panel); color: var(--text);
+  border: 1px solid var(--hairline); box-shadow: 0 1px 2px rgba(15,15,20,.08), 0 6px 16px -6px rgba(15,15,20,.28); }
+button.mx-flecha:hover { background: var(--panel); border-color: var(--accent); color: var(--accent); }
+button.mx-flecha:focus-visible { outline: none; box-shadow: var(--ring); border-color: var(--accent); }
+.mx-flecha.izq { left: calc(var(--mx-stickyw, var(--mx-uw)) + 10px); }
+.mx-flecha.der { right: 10px; }
+.mx-flecha[hidden] { display: none; }
+
+/* ---- Tabla ------------------------------------------------------------------ */
+/* z-index:0 → la tabla es su propio contexto de apilado: nada de adentro sube por encima
+   de los degradés y las flechas, y adentro las celdas fijas (2-4) tapan a las demás (0-1). */
+.tablewrap { position: relative; z-index: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow); overflow: auto; max-height: max(380px, calc(100vh - 236px)); overscroll-behavior-x: contain; }
+/* (accesos.js ajusta el max-height al espacio real que queda debajo de la tabla) */
+table.matrix { border-collapse: separate; border-spacing: 0; font-size: 13px; table-layout: fixed; min-width: 100%; }
+.matrix th, .matrix td { padding: 8px; border-bottom: 1px solid var(--border); background: var(--panel); white-space: nowrap;
+  vertical-align: middle; text-align: center; }
+.matrix tbody tr:last-child > * { border-bottom: none; }
+.matrix th.app, .matrix td.cell { width: var(--mx-colw, 124px); }
+.matrix .fill { width: auto; padding: 0; }
+
+/* Encabezado fijo (arriba) y columna Persona fija (a la izquierda), opacos. */
+.matrix thead th { position: sticky; top: 0; z-index: 3; color: var(--muted); font-weight: 600; font-size: 11.5px;
+  text-transform: uppercase; letter-spacing: .04em; padding: 6px; box-shadow: inset 0 -1px 0 var(--border); border-bottom: 0; }
+.matrix th.u { position: sticky; left: 0; z-index: 2; width: var(--mx-uw); text-align: left; padding: 8px 8px 8px 12px; font-weight: 400;
+  box-shadow: 1px 0 0 var(--border); transition: box-shadow .2s; }
+.matrix thead th.u { z-index: 4; font-weight: 600; box-shadow: 1px 0 0 var(--border), inset 0 -1px 0 var(--border); }
+/* Sombra a la derecha de la columna fija sólo si hay columnas desplazadas debajo. */
+.mx-frame.scrolled .matrix th.u { box-shadow: 1px 0 0 var(--border), var(--mx-sombra); }
+.mx-frame.scrolled .matrix thead th.u { box-shadow: 1px 0 0 var(--border), inset 0 -1px 0 var(--border), var(--mx-sombra); }
+
+.u-in { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.u-in .ucell { flex: 1 1 auto; }
+.u-tit { flex: 1; }
+.u-cnt { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 8px; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.mx-check { width: 16px; height: 16px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
+.mx-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: none; }
+
+/* Fila y columna iluminadas (hover o foco): tonos opacos del acento. */
+.matrix tr.hl > th, .matrix tr.hl > td, .matrix .hlc { background: var(--mx-hl); }
+.matrix tbody tr.hl > td.hlc { background: var(--mx-hl-2); box-shadow: inset 0 0 0 2px var(--accent); }
+.matrix thead th.hlc { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+.matrix tr.sel > th, .matrix tr.sel > td { background: var(--mx-hl); }
+.matrix tr.sel.hl > th, .matrix tr.sel.hl > td:not(.hlc) { background: var(--mx-hl-2); }
+
+/* Usuario deshabilitado: se atenúa el CONTENIDO, no la celda (la fija sigue opaca). */
+tr.off .ucell, tr.off .rc { opacity: .5; }
+.off-tag { color: var(--warn); font-weight: 600; }
 
 /* Identidad compartida (avatar + nombre + email), igual en tabla y tarjetas. */
 .ucell { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.av { width: 30px; height: 30px; border-radius: 50%; background: var(--card); color: var(--muted-2); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.av { width: 30px; height: 30px; border-radius: 50%; background: var(--bg); border: 1px solid var(--border); color: var(--muted-2);
+  display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
 .uinfo { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
-.uinfo b { font-weight: 600; }
+.uinfo b { font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.uname { overflow: hidden; text-overflow: ellipsis; }
 .email { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+.yo-tag { font-size: 10.5px; font-weight: 600; color: var(--accent); border: 1px solid var(--n2-bd); border-radius: 999px; padding: 0 6px; flex: 0 0 auto; }
+/* 2FA: candado cerrado (verde) si está activo, abierto (gris) si no. */
+.tfa-mini { display: inline-grid; place-items: center; flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%; }
+.tfa-mini.on { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--panel)); }
+.tfa-mini.off { color: var(--muted); opacity: .75; }
 
-/* <select> de rol canónico (sin chips minúsculos). Marca el acento si hay rol. */
-select.role { width: 100%; min-width: 110px; max-width: 168px; padding: 7px 30px 7px 11px; font-size: 13px; }
-select.role[data-has] { border-color: var(--accent); color: var(--text); }
-select.role:not([data-has]) { color: var(--muted); }
+/* Menú "…" de la fila: dentro de la columna fija (siempre a mano). */
+button.rowmenu-btn { width: 30px; height: 30px; flex: 0 0 auto; background: transparent; border-color: transparent; color: var(--muted-2); }
+button.rowmenu-btn:hover, button.rowmenu-btn[aria-expanded="true"] { background: var(--panel); border-color: var(--border); color: var(--text); }
+button.rowmenu-btn:focus-visible { outline: none; box-shadow: var(--ring); border-color: var(--accent); }
 
-/* Badge de 2FA sobrio (sin emoji): candado-check si activo, "2FA —" si no. */
-.tfa-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
-  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
-.tfa-badge.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
-.tfa-badge.off { color: var(--muted); }
-.tfa-badge .dash { color: var(--muted); }
-.tfa-badge svg { flex: 0 0 auto; }
+/* Encabezado de app: nombre + cuántas personas tienen acceso; click → editar app. */
+.matrix th .appcol { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; padding: 5px 4px;
+  background: none; border: 0; border-radius: 8px; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
+.matrix th .appcol:hover { background: var(--mx-hl-2); color: var(--accent); }
+.matrix th .appcol:focus-visible { outline: none; box-shadow: var(--ring); }
+.appn { display: inline-flex; align-items: center; gap: 4px; }
+.appn::after { content: ""; width: 11px; height: 11px; flex: 0 0 auto; opacity: 0; transition: opacity .12s; margin-right: -15px;
+  background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c4fb3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E"); }
+.appcol:hover .appn::after, .appcol:focus-visible .appn::after { opacity: .9; }
+.appc { font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* Menú "…" de acciones por fila (agrupa Reset pass / Habilitar-Deshabilitar / Reset 2FA). */
-.rowmenu { position: relative; display: inline-flex; }
-.rowmenu-btn { width: 32px; height: 32px; }
-.rowmenu-pop { left: auto; right: 0; top: calc(100% + 4px); min-width: 190px; }
-.rowmenu-pop .menu-item { justify-content: flex-start; font-size: 13px; }
+/* Celda de rol: un botón con el color de su nivel; abre la lista de roles. */
+.cw { position: relative; }
+button.rc { width: 100%; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 9px 0 10px; border-radius: 9px;
+  font-size: 13px; font-weight: 500; line-height: 1; border: 1px solid var(--n1-bd); background: var(--n1-bg); color: var(--n1-tx);
+  transition: border-color .12s, background .12s, box-shadow .12s; }
+button.rc:hover { background: var(--n1-bg); border-color: var(--accent); }
+button.rc[data-n="2"] { background: var(--n2-bg); border-color: var(--n2-bd); color: var(--n2-tx); }
+button.rc[data-n="3"] { background: var(--n3-bg); border-color: var(--n3-bd); color: var(--n3-tx); font-weight: 600; }
+button.rc[data-n="2"]:hover, button.rc[data-n="3"]:hover { border-color: var(--accent); }
+button.rc[data-n="0"] { background: transparent; border: 1px dashed transparent; color: var(--muted); justify-content: center; }
+button.rc[data-n="0"] .rc-bars { display: none; }
+button.rc[data-n="0"] .rc-t { flex: 0 0 auto; }
+button.rc[data-n="0"]:hover { border-color: var(--hairline); background: var(--panel); }
+button.rc:focus-visible, button.rc[aria-expanded="true"] { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.rc-t { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+.rc-car { flex: 0 0 auto; opacity: 0; transition: opacity .12s; }
+button.rc:hover .rc-car, button.rc:focus-visible .rc-car, button.rc[aria-expanded="true"] .rc-car { opacity: .7; }
+button.rc[data-n="0"] .rc-car { display: none; }
 
-/* Tabla (ancho): scroll-x solo si hace falta; 1.ª columna sticky. */
-.tablewrap { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: auto; box-shadow: var(--shadow); }
-table.matrix { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-.matrix th, .matrix td { padding: 11px 12px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; vertical-align: middle; }
-.matrix thead th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; background: var(--panel); z-index: 2; }
-.matrix th.u, .matrix td.u { text-align: left; }
-.matrix tbody tr:last-child td { border-bottom: none; }
-/* 1.ª columna "Usuario" STICKY (no se pierde al scrollear horizontalmente). */
-.matrix th.u, .matrix td.u { position: sticky; left: 0; z-index: 1; background: var(--panel);
-  box-shadow: 1px 0 0 var(--border); min-width: 210px; }
-.matrix thead th.u { z-index: 3; }
-.matrix tbody tr:hover td { background: var(--card-2); }
-.matrix tbody tr:hover td.u { background: var(--card); }
-.matrix td.acc { text-align: right; }
-tr.off { opacity: .55; }
+/* Estado del guardado en la esquina de la celda: guardando → guardado / error con reintento. */
+.rc-st { position: absolute; top: -7px; right: -6px; z-index: 1; display: grid; place-items: center; pointer-events: none; }
+.rc-st:empty { display: none; }
+.rc-st[data-st="guardado"] { width: 18px; height: 18px; border-radius: 50%; background: var(--ok); color: #fff; animation: mx-pop .2s ease-out; }
+.st-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--n2-bd); border-top-color: var(--accent);
+  background: var(--panel); animation: mx-giro .7s linear infinite; }
+.rc-st button.rc-retry { pointer-events: auto; width: 20px; height: 20px; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 1;
+  background: var(--err); border-color: var(--err); color: #fff; }
+.rc-st button.rc-retry:hover { background: var(--err); filter: brightness(1.08); }
+.con-error button.rc, .con-error select.role { border-color: var(--err); }
+@keyframes mx-giro { to { transform: rotate(360deg); } }
+@keyframes mx-pop { from { transform: scale(.4); opacity: 0; } }
 
-/* Tarjetas (angosto): ocultas por defecto, las activa el media query. */
-.cards { display: none; flex-direction: column; gap: 12px; }
-.ucard { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
-.ucard.off { opacity: .6; }
-.ucard-head { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
-.ucard-head .ucell { flex: 1 1 auto; }
-.ucard-meta { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.ucard-roles { display: flex; flex-direction: column; }
-.rolerow { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--card); }
-.rolerow:first-child { border-top: 0; }
-.rolerow-app { flex: 1 1 auto; font-weight: 500; color: var(--muted-2); }
-.rolerow select.role { flex: 0 0 auto; max-width: 60%; }
-
+.mx-vacio { padding: 26px 16px; text-align: center; color: var(--muted); font-size: 13px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 12px; }
 .matrix-empty { padding: 28px 16px; text-align: center; color: var(--muted); font-size: 13px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
 
+/* ---- Popovers (menú de rol, menú de la fila, filtro, historial) ------------ */
+/* Flotan sobre todo (fixed, en <body>): nunca quedan recortados por la tabla. */
+.pop { position: fixed; z-index: 120; background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15,15,20,.06), 0 16px 36px -12px rgba(15,15,20,.30); padding: 6px; min-width: 200px; max-width: min(360px, calc(100vw - 16px)); }
+:root[data-theme="dark"] .pop { box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 16px 36px -12px rgba(0,0,0,.8); }
+.pop.menu { display: flex; flex-direction: column; gap: 1px; }
+.pop-tit { display: flex; align-items: center; gap: 4px; padding: 6px 9px 7px; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.pop-tit span { color: var(--muted); font-weight: 500; }
+.pop-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+.pop-nota { margin: 6px 9px 2px; font-size: 12px; color: var(--warn); line-height: 1.4; max-width: 260px; white-space: normal; }
+button.pop-x { margin-left: auto; width: 26px; height: 26px; padding: 0; border-radius: 7px; display: grid; place-items: center;
+  background: transparent; border: 1px solid transparent; color: var(--muted-2); font-size: 11px; }
+button.pop-x:hover { background: var(--card); border-color: var(--border); color: var(--text); }
+.menu-item.peligro { color: var(--err); }
+.menu-item[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.menu-item:focus-visible { outline: none; background: var(--card); box-shadow: inset 0 0 0 2px var(--accent); }
+
+.rm-list { position: relative; max-height: 300px; overflow: auto; outline: none; border-radius: 8px; padding: 1px; }
+.rm-list:focus-visible { box-shadow: inset 0 0 0 2px var(--n2-bd); }
+.rm-op { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13.5px; color: var(--n1-tx); }
+.rm-op[data-n="2"] { color: var(--n2-tx); }
+.rm-op[data-n="3"] { color: var(--n3-tx); font-weight: 600; }
+.rm-op[data-n="0"] { color: var(--muted); }
+.rm-op.act { background: var(--mx-hl-2); }
+.rm-op[aria-selected="true"] { background: var(--mx-hl); }
+.rm-op[aria-selected="true"].act { background: var(--mx-hl-2); }
+.rm-op[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.rm-sin { width: 13px; text-align: center; }
+.rm-t { flex: 1; }
+.rm-n { font-size: 11px; font-weight: 500; color: var(--muted); }
+.rm-ok { width: 14px; display: grid; color: var(--accent); }
+.rm-hist { font-size: 13px; }
+
+.filtro-lista { display: flex; flex-direction: column; max-height: 340px; overflow: auto; }
+.filtro-op { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 8px; font-size: 13.5px; cursor: pointer; }
+.filtro-op:hover { background: var(--card); }
+.filtro-op input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
+.filtro-op input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: none; }
+.filtro-op span:nth-of-type(1) { flex: 1; }
+.filtro-n { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.filtro-acc { display: flex; justify-content: flex-end; padding: 2px 4px 2px; }
+
+/* Historial de una celda */
+.histpop { width: 340px; outline: none; }
+.histpop.tip { pointer-events: none; }
+.h-cuerpo { padding: 0 2px 4px; }
+.h-hoy { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 2px 9px 8px; font-size: 12.5px; color: var(--muted-2); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.h-hoy > span:last-child { color: var(--muted); font-size: 12px; }
+.h-lista { list-style: none; margin: 0; padding: 0; }
+.h-lista li { display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; border-radius: 8px; }
+.h-lista li + li { border-top: 1px solid var(--border); border-radius: 0; }
+.h-cambio { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted-2); }
+.h-fl { color: var(--muted); display: inline-grid; }
+.h-quien { font-size: 11.5px; color: var(--muted); white-space: normal; }
+.h-quien b { color: var(--muted-2); font-weight: 600; }
+.h-nada, .h-mas { margin: 6px 9px; font-size: 12.5px; color: var(--muted); }
+.h-nada.err { color: var(--err); }
+
+/* ---- Modales de confirmación y vista previa -------------------------------- */
+.modal-card.ancho { width: min(620px, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
+.modal-card.ancho .modal-cuerpo { overflow: auto; min-height: 0; }
+.cf-de { display: flex; align-items: center; gap: 8px; margin-top: 12px !important; }
+.modal-acciones button.btn-peligro { background: var(--err); border-color: var(--err); }
+.modal-acciones button.btn-peligro:hover { background: var(--err); filter: brightness(1.06); }
+.modal-acciones button:focus-visible, .modal-x:focus-visible { outline: none; box-shadow: var(--ring); }
+.cp-conservar { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--muted-2); margin: 2px 0 12px; cursor: pointer; }
+.cp-conservar input { width: 16px; height: 16px; margin: 2px 0 0; padding: 0; accent-color: var(--accent); flex: 0 0 auto; }
+.pv-resumen { color: var(--text); font-size: 13.5px; }
+.pv-sub { margin: 14px 0 4px !important; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.pv-lista { list-style: none; margin: 6px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 10px; }
+.pv-it { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 8px 12px; }
+.pv-it + .pv-it { border-top: 1px solid var(--border); }
+.pv-quien { display: flex; flex-direction: column; min-width: 0; font-size: 13px; line-height: 1.3; }
+.pv-quien b { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-quien span { color: var(--muted); font-size: 12px; }
+.pv-cambio { display: flex; align-items: center; gap: 6px; }
+.pv-alto { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--panel)); border-radius: 999px; padding: 1px 7px; }
+.pv-motivo { grid-column: 1 / -1; font-size: 12px; color: var(--err); }
+.pv-it.bloqueado .pv-cambio, .pv-it.invalido .pv-cambio, .pv-it.desactualizado .pv-cambio { opacity: .55; text-decoration: line-through; }
+
+/* ---- Tarjetas (angosto): ocultas por defecto, las activa el media query ---- */
+.cards { display: none; flex-direction: column; gap: 12px; }
+.ucard { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.ucard.sel { border-color: var(--n3-bd); }
+.ucard.off .ucell, .ucard.off .ucard-roles { opacity: .6; }
+.ucard-head { display: flex; align-items: center; gap: 10px; padding: 12px 10px 12px 14px; border-bottom: 1px solid var(--border); }
+.ucard.sel .ucard-head { background: var(--mx-hl); }
+.ucard-head .ucell { flex: 1 1 auto; }
+.ucard-roles { display: flex; flex-direction: column; }
+.rolerow { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-top: 1px solid var(--border); }
+.rolerow:first-child { border-top: 0; }
+.rolerow-app { flex: 1 1 auto; font-weight: 500; color: var(--muted-2); }
+.rolerow-ctl { position: relative; flex: 0 0 auto; width: min(52%, 190px); }
+.rolerow-ctl .rc-st { top: -6px; right: -6px; }
+.rolerow .hist-btn { width: 32px; height: 32px; flex: 0 0 auto; background: transparent; border-color: transparent; color: var(--muted); }
+.rolerow .hist-btn:hover { background: var(--card); border-color: var(--border); color: var(--text); }
+
+/* <select> de rol de las tarjetas: mismo color por nivel que la tabla. */
+select.role { width: 100%; padding: 8px 30px 8px 11px; font-size: 13.5px; background-color: var(--n1-bg); border-color: var(--n1-bd); color: var(--n1-tx); }
+select.role[data-n="2"] { background-color: var(--n2-bg); border-color: var(--n2-bd); color: var(--n2-tx); }
+select.role[data-n="3"] { background-color: var(--n3-bg); border-color: var(--n3-bd); color: var(--n3-tx); font-weight: 600; }
+select.role[data-n="0"] { background-color: transparent; border-style: dashed; color: var(--muted); }
+
 /* Punto de quiebre: por debajo, colapsa a tarjetas. */
+@media (max-width: 1000px) { :root { --mx-uw: 248px; } }
 @media (max-width: 720px) {
-  .tablewrap { display: none; }
+  .mx-frame, #mx-ayuda { display: none; }
   .cards { display: flex; }
   .matrix-head { align-items: flex-start; }
+  .mx-search { flex: 1 1 100%; }
+  .mx-tools .sp { display: none; }
+  .mx-leyenda { width: 100%; }
+  .mx-bulk-campos { flex: 1 1 100%; }
+  .mx-bulk select { max-width: 52vw; }
+}
+
+/* Sin animaciones si el sistema lo pide. */
+@media (prefers-reduced-motion: reduce) {
+  .mx-frame::before, .mx-frame::after, .matrix th.u, button.rc, .rc-car, .appn::after { transition: none; }
+  .rc-st[data-st="guardado"] { animation: none; }
+  .st-spin { animation: none; border-color: var(--accent); border-style: dotted; }
 }
 
 /* ---- Cards centradas (login lo da el canónico; estas son las pantallas
@@ -132,21 +386,18 @@ tr.off { opacity: .55; }
 .link-copy { flex: 0 0 auto; }
 .link-mailed { color: var(--ok); font-size: 13px; margin: 4px 0 0; }
 
-/* ---- Toast --------------------------------------------------------------- */
-.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 9px; font-size: 13px; z-index: 150; max-width: 90vw; box-shadow: var(--shadow); }
+/* ---- Avisos (toasts) apilados, con acción opcional (Deshacer) ------------- */
+.toasts { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 150; display: flex; flex-direction: column;
+  align-items: center; gap: 8px; width: max-content; max-width: 92vw; pointer-events: none; }
+.toast { display: flex; align-items: center; gap: 14px; background: var(--text); color: var(--bg); padding: 9px 10px 9px 16px; min-height: 40px;
+  border-radius: 10px; font-size: 13px; box-shadow: var(--shadow); pointer-events: auto; animation: esc-cardpop .18s ease-out; }
+.toast:not(:has(button)) { padding-right: 16px; }
 .toast.bad { background: var(--err); color: #fff; }
-
-/* ---- Encabezado de columna de app: clickeable para editar ---------------- */
-.matrix th .appcol {
-  background: none; border: 0; color: inherit; font: inherit; font-weight: 600;
-  cursor: pointer; padding: 3px 6px; border-radius: 7px; display: inline-flex; align-items: center; gap: 5px;
-}
-.matrix th .appcol::after {
-  content: ""; width: 12px; height: 12px; flex: 0 0 auto; opacity: 0; transition: opacity .12s;
-  background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2370707b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E");
-}
-.matrix th .appcol:hover { color: var(--accent); background: var(--card); }
-.matrix th .appcol:hover::after { opacity: .8; }
+.toast button.toast-accion { padding: 5px 11px; font-size: 12.5px; border-radius: 7px; background: transparent; color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
+.toast button.toast-accion:hover { background: color-mix(in srgb, currentColor 14%, transparent); border-color: currentColor; }
+.toast button.toast-accion:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
 /* ---- Editor de app (modal): campos etiquetados + acción de peligro ------- */
 .fld { display: flex; flex-direction: column; gap: 5px; margin-bottom: 13px; text-align: left; }
